@@ -194,6 +194,41 @@ fn range_generates_integer_arrays() {
 }
 
 #[test]
+fn strings_and_arrays_have_sequence_helpers() {
+    assert_eq!(eval("first([1, 2, 3])"), "1");
+    assert_eq!(eval("rest([1, 2, 3])"), "[2,3]");
+    assert_eq!(eval("slice([1, 2, 3, 4], 1, -1)"), "[2,3]");
+    assert_eq!(eval(r#"first("cafe")"#), r#""c""#);
+    assert_eq!(eval(r#"rest("cafe")"#), r#""afe""#);
+    assert_eq!(eval(r#"slice("cafe", 1, 3)"#), r#""af""#);
+}
+
+#[test]
+fn string_helpers_are_unicode_aware() {
+    assert_eq!(eval(r#"len("cafe\u2615")"#), "5");
+    assert_eq!(eval(r#"first("\u2615tea")"#), r#""☕""#);
+    assert_eq!(eval(r#"slice("a\u2615b", 1, 2)"#), r#""☕""#);
+}
+
+#[test]
+fn strings_can_be_split_and_joined() {
+    assert_eq!(eval(r#"split(",", "a,b,c")"#), r#"["a","b","c"]"#);
+    assert_eq!(eval(r#"join("-", ["a", "b", "c"])"#), r#""a-b-c""#);
+}
+
+#[test]
+fn strings_have_common_transformations_and_predicates() {
+    assert_eq!(eval(r#"lower("Hello")"#), r#""hello""#);
+    assert_eq!(eval(r#"upper("Hello")"#), r#""HELLO""#);
+    assert_eq!(eval(r#"starts_with("Sn", "Snare")"#), "true");
+    assert_eq!(eval(r#"ends_with("are", "Snare")"#), "true");
+    assert_eq!(
+        eval(r#"replace("world", "Snare", "hello, world")"#),
+        r#""hello, Snare""#
+    );
+}
+
+#[test]
 fn collection_helpers_make_sqlite_rows_easy_to_explore() {
     let mut engine = Engine::new();
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();

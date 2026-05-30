@@ -16,10 +16,20 @@ pub fn install(environment: &Environment) {
     environment.set("get", Value::native(get));
     environment.set("has", Value::native(has));
     environment.set("push", Value::native(push));
+    environment.set("first", Value::native(first));
+    environment.set("rest", Value::native(rest));
+    environment.set("slice", Value::native(slice));
     environment.set("map", Value::native(map));
     environment.set("filter", Value::native(filter));
     environment.set("range", Value::native(range));
     environment.set("reduce", Value::native(reduce));
+    environment.set("join", Value::native(join));
+    environment.set("split", Value::native(split));
+    environment.set("lower", Value::native(lower));
+    environment.set("upper", Value::native(upper));
+    environment.set("starts_with", Value::native(starts_with));
+    environment.set("ends_with", Value::native(ends_with));
+    environment.set("replace", Value::native(replace));
     let load_environment = environment.clone();
     environment.set(
         "load",
@@ -57,7 +67,7 @@ fn len(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let len = match &positional[0] {
-        Value::String(value) => value.len(),
+        Value::String(value) => value.chars().count(),
         Value::Array(value) => value.len(),
         Value::Object(value) => value.len(),
         _ => return Err(Error::Type("len expects a string, array, or object".into())),
@@ -145,6 +155,52 @@ fn push(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     Ok(Value::Array(result))
 }
 
+fn first(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    match &positional[0] {
+        Value::Array(values) => Ok(values.first().cloned().unwrap_or(Value::Null)),
+        Value::String(value) => Ok(value
+            .chars()
+            .next()
+            .map(|character| Value::String(character.to_string()))
+            .unwrap_or(Value::Null)),
+        _ => Err(Error::Type("first expects an array or string".into())),
+    }
+}
+
+fn rest(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    match &positional[0] {
+        Value::Array(values) => Ok(Value::Array(values.get(1..).unwrap_or_default().to_vec())),
+        Value::String(value) => Ok(Value::String(value.chars().skip(1).collect())),
+        _ => Err(Error::Type("rest expects an array or string".into())),
+    }
+}
+
+fn slice(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    if !(2..=3).contains(&positional.len()) {
+        return Err(Error::Call(
+            "slice expects a collection, start, and optional stop".into(),
+        ));
+    }
+    let start = integer(&positional[1])?;
+    match &positional[0] {
+        Value::Array(values) => {
+            let range = slice_range(values.len(), start, positional.get(2))?;
+            Ok(Value::Array(values[range].to_vec()))
+        }
+        Value::String(value) => {
+            let characters: Vec<_> = value.chars().collect();
+            let range = slice_range(characters.len(), start, positional.get(2))?;
+            Ok(Value::String(characters[range].iter().collect()))
+        }
+        _ => Err(Error::Type("slice expects an array or string".into())),
+    }
+}
+
 fn map(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
@@ -218,6 +274,100 @@ fn reduce(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     Ok(result)
 }
 
+fn join(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::String(separator) = &positional[0] else {
+        return Err(Error::Type("join expects a separator string".into()));
+    };
+    let Value::Array(values) = &positional[1] else {
+        return Err(Error::Type("join expects an array of strings".into()));
+    };
+    let strings = values
+        .iter()
+        .map(|value| match value {
+            Value::String(value) => Ok(value.as_str()),
+            _ => Err(Error::Type("join expects an array of strings".into())),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Value::String(strings.join(separator)))
+}
+
+fn split(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::String(separator) = &positional[0] else {
+        return Err(Error::Type("split expects a separator string".into()));
+    };
+    let Value::String(value) = &positional[1] else {
+        return Err(Error::Type("split expects a string".into()));
+    };
+    Ok(Value::Array(
+        value
+            .split(separator)
+            .map(|value| Value::String(value.to_owned()))
+            .collect(),
+    ))
+}
+
+fn lower(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    string_transform(positional, named, "lower", str::to_lowercase)
+}
+
+fn upper(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    string_transform(positional, named, "upper", str::to_uppercase)
+}
+
+fn starts_with(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    string_predicate(positional, named, "starts_with", |value, pattern| {
+        value.starts_with(pattern)
+    })
+}
+
+fn ends_with(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    string_predicate(positional, named, "ends_with", |value, pattern| {
+        value.ends_with(pattern)
+    })
+}
+
+fn replace(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 3)?;
+    let [Value::String(from), Value::String(to), Value::String(value)] = positional.as_slice()
+    else {
+        return Err(Error::Type("replace expects three strings".into()));
+    };
+    Ok(Value::String(value.replace(from, to)))
+}
+
+fn string_transform(
+    positional: Vec<Value>,
+    named: NamedArguments,
+    name: &str,
+    transform: impl FnOnce(&str) -> String,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::String(value) = &positional[0] else {
+        return Err(Error::Type(format!("{name} expects a string")));
+    };
+    Ok(Value::String(transform(value)))
+}
+
+fn string_predicate(
+    positional: Vec<Value>,
+    named: NamedArguments,
+    name: &str,
+    predicate: impl FnOnce(&str, &str) -> bool,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let [Value::String(pattern), Value::String(value)] = positional.as_slice() else {
+        return Err(Error::Type(format!("{name} expects two strings")));
+    };
+    Ok(Value::Bool(predicate(value, pattern)))
+}
+
 fn integer(value: &Value) -> Result<i64> {
     let Value::Number(value) = value else {
         return Err(Error::Type("expected an integer".into()));
@@ -225,6 +375,23 @@ fn integer(value: &Value) -> Result<i64> {
     value
         .as_i64()
         .ok_or_else(|| Error::Type("expected an integer".into()))
+}
+
+fn slice_range(len: usize, start: i64, stop: Option<&Value>) -> Result<std::ops::Range<usize>> {
+    let start = bounded_index(len, start);
+    let stop = stop
+        .map(integer)
+        .transpose()?
+        .map_or(len, |stop| bounded_index(len, stop));
+    Ok(start.min(stop)..stop)
+}
+
+fn bounded_index(len: usize, index: i64) -> usize {
+    if index < 0 {
+        len.saturating_sub(index.unsigned_abs() as usize)
+    } else {
+        usize::try_from(index).unwrap_or(usize::MAX).min(len)
+    }
 }
 
 fn load(environment: &Environment, positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
