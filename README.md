@@ -69,28 +69,28 @@ map([1, 2, 3], fn(value) => value * 2)         // [2, 4, 6]
 filter([1, 2, 3, 4], fn(value) => value > 2)   // [3, 4]
 range(1, 6, 2)                                 // [1, 3, 5]
 reduce([1, 2, 3], fn(total, value) => total + value, 0) // 6
-first([1, 2, 3])                                // 1
-rest([1, 2, 3])                                 // [2, 3]
+first([1, 2, 3])                               // 1
+rest([1, 2, 3])                                // [2, 3]
 slice([1, 2, 3, 4], 1, -1)                     // [2, 3]
-split(",", "a,b,c")                             // ["a", "b", "c"]
-join("-", ["a", "b", "c"])                      // "a-b-c"
-lower("Hello")                                  // "hello"
-starts_with("Sn", "Snare")                      // true
-replace("world", "Snare", "hello, world")       // "hello, Snare"
+split(",", "a,b,c")                            // ["a", "b", "c"]
+join("-", ["a", "b", "c"])                     // "a-b-c"
+lower("Hello")                                 // "hello"
+starts_with("Sn", "Snare")                     // true
+replace("world", "Snare", "hello, world")      // "hello, Snare"
 ```
 
 `print` writes strings without JSON quotes or escapes and separates multiple
 arguments with spaces:
 
 ```snare
-print("hello", "world")                         // prints: hello world
+print("hello", "world")                        // prints: hello world
 ```
 
 The global namespace is inspectable from the REPL:
 
 ```snare
 keys(globals())
-keys(globals().sqlite)                          // ["execute", "open", "query"]
+keys(globals().sqlite)                         // ["execute", "open", "query"]
 ```
 
 SQLite is intentionally present in the first milestone:
