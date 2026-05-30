@@ -91,6 +91,19 @@ impl Value {
         }
     }
 
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::Null => "null",
+            Self::Bool(_) => "bool",
+            Self::Number(_) => "number",
+            Self::String(_) => "string",
+            Self::Array(_) => "array",
+            Self::Object(_) => "object",
+            Self::Function(_) | Self::Native(_) => "function",
+            Self::Database(_) => "sqlite_database",
+        }
+    }
+
     pub fn equal(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,

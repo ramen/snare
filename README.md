@@ -60,6 +60,11 @@ min([3, 1, 2])                                 // 1
 max([3, 1, 2])                                 // 3
 any([null, 0, "yes"])                          // true
 all([1, true, "yes"])                          // true
+type_of({"answer": 42})                        // "object"
+is_type([1, 2, 3], "array")                    // true
+string(42)                                     // "42"
+number("42.5")                                 // 42.5
+bool([])                                       // false
 map([1, 2, 3], fn(value) => value * 2)         // [2, 4, 6]
 filter([1, 2, 3, 4], fn(value) => value > 2)   // [3, 4]
 range(1, 6, 2)                                 // [1, 3, 5]

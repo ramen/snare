@@ -225,6 +225,31 @@ fn numeric_and_boolean_helpers_cover_common_repl_tasks() {
 }
 
 #[test]
+fn values_have_json_native_type_names() {
+    assert_eq!(eval("type_of(null)"), r#""null""#);
+    assert_eq!(eval("type_of(42)"), r#""number""#);
+    assert_eq!(eval(r#"type_of({"answer": 42})"#), r#""object""#);
+    assert_eq!(eval("type_of(fn() => null)"), r#""function""#);
+    assert_eq!(eval(r#"is_type([1, 2], "array")"#), "true");
+
+    let mut engine = Engine::new();
+    engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
+    assert_eq!(
+        engine.eval("type_of(db)").unwrap().to_string(),
+        r#""sqlite_database""#
+    );
+}
+
+#[test]
+fn values_have_conservative_conversion_helpers() {
+    assert_eq!(eval("string(42)"), r#""42""#);
+    assert_eq!(eval(r#"string("hello")"#), r#""hello""#);
+    assert_eq!(eval(r#"number("42.5")"#), "42.5");
+    assert_eq!(eval("bool([])"), "false");
+    assert_eq!(eval(r#"bool("yes")"#), "true");
+}
+
+#[test]
 fn strings_and_arrays_have_sequence_helpers() {
     assert_eq!(eval("first([1, 2, 3])"), "1");
     assert_eq!(eval("rest([1, 2, 3])"), "[2,3]");

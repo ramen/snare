@@ -10,6 +10,11 @@ use crate::{Error, Module, Result, parser};
 
 pub fn install(environment: &Environment) {
     environment.set("print", Value::native(print));
+    environment.set("type_of", Value::native(type_of));
+    environment.set("is_type", Value::native(is_type));
+    environment.set("string", Value::native(string));
+    environment.set("number", Value::native(to_number));
+    environment.set("bool", Value::native(bool));
     environment.set("not", Value::native(not));
     environment.set("abs", Value::native(abs));
     environment.set("sum", Value::native(sum));
@@ -76,6 +81,49 @@ fn print(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     expect_len(&positional, 1)?;
     println!("{}", positional[0]);
     Ok(Value::Null)
+}
+
+fn type_of(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    Ok(Value::String(positional[0].type_name().into()))
+}
+
+fn is_type(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::String(expected) = &positional[1] else {
+        return Err(Error::Type("is_type expects a type name string".into()));
+    };
+    Ok(Value::Bool(positional[0].type_name() == expected))
+}
+
+fn string(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    Ok(Value::String(match &positional[0] {
+        Value::String(value) => value.clone(),
+        value => value.to_string(),
+    }))
+}
+
+fn to_number(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    match &positional[0] {
+        Value::Number(value) => Ok(Value::Number(value.clone())),
+        Value::String(value) => value
+            .parse()
+            .map(Value::Number)
+            .map_err(|_| Error::Type("number expects a JSON number string".into())),
+        _ => Err(Error::Type("number expects a number or string".into())),
+    }
+}
+
+fn bool(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    Ok(Value::Bool(positional[0].truthy()))
 }
 
 fn not(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
