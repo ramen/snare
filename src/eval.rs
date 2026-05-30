@@ -59,6 +59,14 @@ impl Environment {
             .or_else(|| scope.parent.as_ref()?.get(name))
     }
 
+    pub fn globals(&self) -> ValueMap {
+        let scope = self.0.borrow();
+        match &scope.parent {
+            Some(parent) => parent.globals(),
+            None => scope.values.clone(),
+        }
+    }
+
     fn source(&self) -> Option<Rc<str>> {
         let scope = self.0.borrow();
         scope

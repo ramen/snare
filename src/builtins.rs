@@ -30,6 +30,11 @@ pub fn install(environment: &Environment) {
     environment.set("starts_with", Value::native(starts_with));
     environment.set("ends_with", Value::native(ends_with));
     environment.set("replace", Value::native(replace));
+    let globals_environment = environment.clone();
+    environment.set(
+        "globals",
+        Value::native(move |positional, named| globals(&globals_environment, positional, named)),
+    );
     let load_environment = environment.clone();
     environment.set(
         "load",
@@ -338,6 +343,16 @@ fn replace(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
         return Err(Error::Type("replace expects three strings".into()));
     };
     Ok(Value::String(value.replace(from, to)))
+}
+
+fn globals(
+    environment: &Environment,
+    positional: Vec<Value>,
+    named: NamedArguments,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 0)?;
+    Ok(Value::Object(environment.globals()))
 }
 
 fn string_transform(

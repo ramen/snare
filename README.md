@@ -63,6 +63,13 @@ starts_with("Sn", "Snare")                      // true
 replace("world", "Snare", "hello, world")       // "hello, Snare"
 ```
 
+The global namespace is inspectable from the REPL:
+
+```snare
+keys(globals())
+keys(globals().sqlite)                          // ["execute", "open", "query"]
+```
+
 SQLite is intentionally present in the first milestone:
 
 ```snare

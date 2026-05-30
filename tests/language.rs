@@ -229,6 +229,33 @@ fn strings_have_common_transformations_and_predicates() {
 }
 
 #[test]
+fn globals_exposes_the_live_root_namespace() {
+    let mut engine = Engine::new();
+    assert_eq!(
+        engine
+            .eval(r#"has(globals(), "globals")"#)
+            .unwrap()
+            .to_string(),
+        "true"
+    );
+    assert_eq!(
+        engine
+            .eval(r#"keys(globals().sqlite)"#)
+            .unwrap()
+            .to_string(),
+        r#"["execute","open","query"]"#
+    );
+    engine.eval("let discovered = 42;").unwrap();
+    assert_eq!(
+        engine
+            .eval(r#"get(globals(), "discovered")"#)
+            .unwrap()
+            .to_string(),
+        "42"
+    );
+}
+
+#[test]
 fn collection_helpers_make_sqlite_rows_easy_to_explore() {
     let mut engine = Engine::new();
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
