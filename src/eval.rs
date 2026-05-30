@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::ast::{Argument, Expr, Statement};
+use crate::ast::{Argument, Expr, ExprKind, Statement, StatementKind};
 use crate::value::{Function, Value};
 use crate::{Error, Result};
 
@@ -12,6 +12,7 @@ pub struct Environment(Rc<RefCell<Scope>>);
 #[derive(Default)]
 struct Scope {
     parent: Option<Environment>,
+    source: Option<Rc<str>>,
     values: BTreeMap<String, Value>,
 }
 
@@ -19,6 +20,15 @@ impl Environment {
     pub fn child(&self) -> Self {
         Self(Rc::new(RefCell::new(Scope {
             parent: Some(self.clone()),
+            source: None,
+            values: BTreeMap::new(),
+        })))
+    }
+
+    pub fn child_with_source(&self, source: impl Into<Rc<str>>) -> Self {
+        Self(Rc::new(RefCell::new(Scope {
+            parent: Some(self.clone()),
+            source: Some(source.into()),
             values: BTreeMap::new(),
         })))
     }
@@ -49,49 +59,69 @@ impl Environment {
             .cloned()
             .or_else(|| scope.parent.as_ref()?.get(name))
     }
+
+    fn source(&self) -> Option<Rc<str>> {
+        let scope = self.0.borrow();
+        scope
+            .source
+            .clone()
+            .or_else(|| scope.parent.as_ref()?.source())
+    }
 }
 
 pub fn eval_statements(statements: &[Statement], environment: &Environment) -> Result<Value> {
     let mut result = Value::Null;
     for statement in statements {
-        result = match statement {
-            Statement::Let(name, expr) => {
+        result = match &statement.kind {
+            StatementKind::Let(name, expr) => {
                 let value = eval(expr, environment)?;
                 environment.set(name, value);
                 Value::Null
             }
-            Statement::Assign(name, expr) => {
+            StatementKind::Assign(name, expr) => {
                 let value = eval(expr, environment)?;
-                environment.assign(name, value)?;
+                environment
+                    .assign(name, value)
+                    .map_err(|error| error.at(statement.span))?;
                 Value::Null
             }
-            Statement::Expr(expr) => eval(expr, environment)?,
+            StatementKind::Expr(expr) => eval(expr, environment)?,
         };
     }
     Ok(result)
 }
 
 pub fn eval(expr: &Expr, environment: &Environment) -> Result<Value> {
-    match expr {
-        Expr::Null => Ok(Value::Null),
-        Expr::Bool(value) => Ok(Value::Bool(*value)),
-        Expr::Number(value) => Ok(Value::Number(value.clone())),
-        Expr::String(value) => Ok(Value::String(value.clone())),
-        Expr::Array(values) => values
+    eval_inner(expr, environment).map_err(|error| {
+        let error = error.at(expr.span);
+        match environment.source() {
+            Some(source) => error.with_source(&source),
+            None => error,
+        }
+    })
+}
+
+fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
+    match &expr.kind {
+        ExprKind::Null => Ok(Value::Null),
+        ExprKind::Bool(value) => Ok(Value::Bool(*value)),
+        ExprKind::Number(value) => Ok(Value::Number(value.clone())),
+        ExprKind::String(value) => Ok(Value::String(value.clone())),
+        ExprKind::Array(values) => values
             .iter()
             .map(|value| eval(value, environment))
             .collect::<Result<_>>()
             .map(Value::Array),
-        Expr::Object(values) => values
+        ExprKind::Object(values) => values
             .iter()
             .map(|(key, value)| Ok((key.clone(), eval(value, environment)?)))
             .collect::<Result<_>>()
             .map(Value::Object),
-        Expr::Identifier(name) => environment
+        ExprKind::Identifier(name) => environment
             .get(name)
             .ok_or_else(|| Error::Name(format!("unknown name: {name}"))),
-        Expr::Unary(operator, expr) => eval_unary(operator, eval(expr, environment)?),
-        Expr::Binary(left, operator, right) => {
+        ExprKind::Unary(operator, expr) => eval_unary(operator, eval(expr, environment)?),
+        ExprKind::Binary(left, operator, right) => {
             let left = eval(left, environment)?;
             if operator == "&&" && !left.truthy() {
                 return Ok(left);
@@ -101,28 +131,29 @@ pub fn eval(expr: &Expr, environment: &Environment) -> Result<Value> {
             }
             eval_binary(left, operator, eval(right, environment)?)
         }
-        Expr::Member(object, name) => match eval(object, environment)? {
+        ExprKind::Member(object, name) => match eval(object, environment)? {
             Value::Object(mut values) => values
                 .remove(name)
                 .ok_or_else(|| Error::Name(format!("object has no member: {name}"))),
             _ => Err(Error::Type("member access expects an object".into())),
         },
-        Expr::Function(parameters, body) => Ok(Value::Function(Rc::new(Function {
+        ExprKind::Function(parameters, body) => Ok(Value::Function(Rc::new(Function {
             parameters: parameters.clone(),
             body: *body.clone(),
             environment: environment.clone(),
         }))),
-        Expr::Call(function, arguments) => {
+        ExprKind::Call(function, arguments) => {
             call(eval(function, environment)?, arguments, environment)
+                .map_err(|error| error.frame(expr.span))
         }
-        Expr::If(condition, then_expr, else_expr) => {
+        ExprKind::If(condition, then_expr, else_expr) => {
             if eval(condition, environment)?.truthy() {
                 eval(then_expr, environment)
             } else {
                 eval(else_expr, environment)
             }
         }
-        Expr::Do(statements, result) => {
+        ExprKind::Do(statements, result) => {
             let environment = environment.child();
             eval_statements(statements, &environment)?;
             eval(result, &environment)

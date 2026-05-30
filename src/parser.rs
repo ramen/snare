@@ -3,7 +3,7 @@ use pest::error::InputLocation;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
-use crate::ast::{Argument, Expr, Parameter, Statement};
+use crate::ast::{Argument, Expr, ExprKind, Parameter, Span, Statement, StatementKind};
 use crate::{Error, Result};
 
 #[derive(Parser)]
@@ -32,31 +32,37 @@ pub fn is_incomplete(source: &str) -> bool {
 }
 
 fn parse_statement(pair: Pair<Rule>) -> Result<Statement> {
+    let span = span(&pair);
     match pair.as_rule() {
         Rule::let_statement => {
             let mut inner = pair.into_inner();
             let name = inner.next().expect("let name").as_str().to_owned();
-            Ok(Statement::Let(
-                name,
-                parse_expr(inner.next().expect("let value"))?,
-            ))
+            Ok(Statement {
+                kind: StatementKind::Let(name, parse_expr(inner.next().expect("let value"))?),
+                span,
+            })
         }
         Rule::assignment_statement => {
             let mut inner = pair.into_inner();
             let name = inner.next().expect("assignment name").as_str().to_owned();
-            Ok(Statement::Assign(
-                name,
-                parse_expr(inner.next().expect("assignment value"))?,
-            ))
+            Ok(Statement {
+                kind: StatementKind::Assign(
+                    name,
+                    parse_expr(inner.next().expect("assignment value"))?,
+                ),
+                span,
+            })
         }
-        Rule::expression_statement => Ok(Statement::Expr(parse_expr(
-            pair.into_inner().next().expect("expression"),
-        )?)),
+        Rule::expression_statement => Ok(Statement {
+            kind: StatementKind::Expr(parse_expr(pair.into_inner().next().expect("expression"))?),
+            span,
+        }),
         _ => unreachable!("unexpected statement: {:?}", pair.as_rule()),
     }
 }
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
+    let pair_span = span(&pair);
     match pair.as_rule() {
         Rule::expression => {
             let mut inner = pair.into_inner();
@@ -72,43 +78,66 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
             let mut inner: Vec<_> = pair.into_inner().collect();
             let value = parse_expr(inner.pop().expect("prefix value"))?;
             inner.into_iter().rev().try_fold(value, |value, operator| {
-                Ok(Expr::Unary(operator.as_str().to_owned(), Box::new(value)))
+                let span = Span {
+                    start: operator.as_span().start(),
+                    end: value.span.end,
+                };
+                Ok(Expr {
+                    kind: ExprKind::Unary(operator.as_str().to_owned(), Box::new(value)),
+                    span,
+                })
             })
         }
         Rule::postfix => {
             let mut inner = pair.into_inner();
             let value = parse_expr(inner.next().expect("postfix value"))?;
             inner.try_fold(value, |value, suffix| match suffix.as_rule() {
-                Rule::call => Ok(Expr::Call(Box::new(value), parse_call(suffix)?)),
-                Rule::member => Ok(Expr::Member(
-                    Box::new(value),
-                    suffix
-                        .into_inner()
-                        .next()
-                        .expect("member name")
-                        .as_str()
-                        .to_owned(),
-                )),
+                Rule::call => Ok(Expr {
+                    kind: ExprKind::Call(Box::new(value), parse_call(suffix)?),
+                    span: pair_span,
+                }),
+                Rule::member => Ok(Expr {
+                    kind: ExprKind::Member(
+                        Box::new(value),
+                        suffix
+                            .into_inner()
+                            .next()
+                            .expect("member name")
+                            .as_str()
+                            .to_owned(),
+                    ),
+                    span: pair_span,
+                }),
                 _ => unreachable!("unexpected postfix"),
             })
         }
         Rule::grouped => parse_expr(pair.into_inner().next().expect("grouped expression")),
-        Rule::identifier => Ok(Expr::Identifier(pair.as_str().to_owned())),
-        Rule::null => Ok(Expr::Null),
-        Rule::boolean => Ok(Expr::Bool(pair.as_str() == "true")),
-        Rule::number => Ok(Expr::Number(
-            pair.as_str()
-                .parse()
-                .map_err(|_| Error::Parse("invalid number".into()))?,
+        Rule::identifier => Ok(expr(
+            ExprKind::Identifier(pair.as_str().to_owned()),
+            pair_span,
         )),
-        Rule::string => Ok(Expr::String(
-            serde_json::from_str(pair.as_str()).map_err(|error| Error::Parse(error.to_string()))?,
+        Rule::null => Ok(expr(ExprKind::Null, pair_span)),
+        Rule::boolean => Ok(expr(ExprKind::Bool(pair.as_str() == "true"), pair_span)),
+        Rule::number => Ok(expr(
+            ExprKind::Number(
+                pair.as_str()
+                    .parse()
+                    .map_err(|_| Error::Parse("invalid number".into()))?,
+            ),
+            pair_span,
+        )),
+        Rule::string => Ok(expr(
+            ExprKind::String(
+                serde_json::from_str(pair.as_str())
+                    .map_err(|error| Error::Parse(error.to_string()))?,
+            ),
+            pair_span,
         )),
         Rule::array => pair
             .into_inner()
             .map(parse_expr)
             .collect::<Result<_>>()
-            .map(Expr::Array),
+            .map(|values| expr(ExprKind::Array(values), pair_span)),
         Rule::object => pair
             .into_inner()
             .map(|entry| {
@@ -118,7 +147,7 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
                 Ok((key, parse_expr(inner.next().expect("object value"))?))
             })
             .collect::<Result<_>>()
-            .map(Expr::Object),
+            .map(|values| expr(ExprKind::Object(values), pair_span)),
         Rule::function => {
             let mut inner: Vec<_> = pair.into_inner().collect();
             let body = parse_expr(inner.pop().expect("function body"))?;
@@ -127,14 +156,20 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
             } else {
                 parse_parameters(inner.pop().expect("parameters"))?
             };
-            Ok(Expr::Function(parameters, Box::new(body)))
+            Ok(expr(
+                ExprKind::Function(parameters, Box::new(body)),
+                pair_span,
+            ))
         }
         Rule::if_expression => {
             let mut inner = pair.into_inner();
-            Ok(Expr::If(
-                Box::new(parse_expr(inner.next().expect("condition"))?),
-                Box::new(parse_expr(inner.next().expect("then"))?),
-                Box::new(parse_expr(inner.next().expect("else"))?),
+            Ok(expr(
+                ExprKind::If(
+                    Box::new(parse_expr(inner.next().expect("condition"))?),
+                    Box::new(parse_expr(inner.next().expect("then"))?),
+                    Box::new(parse_expr(inner.next().expect("else"))?),
+                ),
+                pair_span,
             ))
         }
         Rule::do_expression => {
@@ -144,7 +179,7 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
                 .into_iter()
                 .map(parse_statement)
                 .collect::<Result<_>>()?;
-            Ok(Expr::Do(statements, Box::new(result)))
+            Ok(expr(ExprKind::Do(statements, Box::new(result)), pair_span))
         }
         _ => unreachable!("unexpected expression: {:?}", pair.as_rule()),
     }
@@ -209,7 +244,25 @@ fn parse_binary(mut left: Expr, rest: &[(String, Expr)], index: &mut usize, mini
             }
             right = parse_binary(right, rest, index, next);
         }
-        left = Expr::Binary(Box::new(left), operator, Box::new(right));
+        let span = Span {
+            start: left.span.start,
+            end: right.span.end,
+        };
+        left = expr(
+            ExprKind::Binary(Box::new(left), operator, Box::new(right)),
+            span,
+        );
     }
     left
+}
+
+fn expr(kind: ExprKind, span: Span) -> Expr {
+    Expr { kind, span }
+}
+
+fn span(pair: &Pair<Rule>) -> Span {
+    Span {
+        start: pair.as_span().start(),
+        end: pair.as_span().end(),
+    }
 }

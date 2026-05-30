@@ -165,6 +165,7 @@ fn sqlite_is_available_as_a_module() {
 fn collection_helpers_work_with_json_values() {
     assert_eq!(eval(r#"keys({"b": 2, "a": 1})"#), r#"["a","b"]"#);
     assert_eq!(eval(r#"values({"b": 2, "a": 1})"#), "[1,2]");
+    assert_eq!(eval(r#"pairs({"b": 2, "a": 1})"#), r#"[["a",1],["b",2]]"#);
     assert_eq!(eval(r#"get({"answer": 42}, "answer")"#), "42");
     assert_eq!(eval(r#"get({}, "missing", "default")"#), r#""default""#);
     assert_eq!(eval("get([1, 2, 3], -1)"), "3");
@@ -179,6 +180,17 @@ fn collection_callbacks_can_be_snare_functions() {
         eval("filter([1, 2, 3, 4], fn(value) => value % 2 == 0)"),
         "[2,4]"
     );
+    assert_eq!(
+        eval("reduce([1, 2, 3, 4], fn(total, value) => total + value, 0)"),
+        "10"
+    );
+}
+
+#[test]
+fn range_generates_integer_arrays() {
+    assert_eq!(eval("range(4)"), "[0,1,2,3]");
+    assert_eq!(eval("range(2, 5)"), "[2,3,4]");
+    assert_eq!(eval("range(5, 0, -2)"), "[5,3,1]");
 }
 
 #[test]
@@ -247,4 +259,71 @@ fn file_errors_include_source_context() {
         .to_string();
     assert!(error.contains(&format!("while loading {}", missing.display())));
     assert!(error.contains("I/O error"));
+}
+
+#[test]
+fn runtime_errors_include_expression_locations() {
+    let error = Engine::new()
+        .eval("let answer = 42;\nanswer + missing")
+        .err()
+        .expect("missing name should fail")
+        .to_string();
+    assert!(error.contains("name error: unknown name: missing"));
+    assert!(error.contains(" --> 2:10"));
+    assert!(error.contains("2 | answer + missing"));
+    assert!(error.contains("  |          ^^^^^^^"));
+}
+
+#[test]
+fn loaded_module_errors_point_into_the_module_source() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("broken.snare");
+    fs::write(&path, "{\n  \"answer\": missing\n}").unwrap();
+    let source = format!(
+        "load({})",
+        serde_json::to_string(&path.to_string_lossy()).unwrap()
+    );
+
+    let error = Engine::new()
+        .eval(&source)
+        .err()
+        .expect("broken module should fail")
+        .to_string();
+    assert!(error.contains(&format!("while loading {}", path.display())));
+    assert!(error.contains(" --> 2:13"));
+    assert!(error.contains("2 |   \"answer\": missing"));
+}
+
+#[test]
+fn function_errors_include_call_frames() {
+    let error = Engine::new()
+        .eval("let broken = fn() => missing;\nbroken()")
+        .err()
+        .expect("broken function should fail")
+        .to_string();
+    assert!(error.contains(" --> 1:22"));
+    assert!(error.contains("1 | let broken = fn() => missing;"));
+    assert!(error.contains(" called from 2:1"));
+    assert!(error.contains("2 | broken()"));
+}
+
+#[test]
+fn loaded_functions_keep_their_module_source_for_diagnostics() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("broken.snare");
+    fs::write(&path, "{\n  \"broken\": fn() => missing\n}").unwrap();
+    let source = format!(
+        "let module = load({});\nmodule.broken()",
+        serde_json::to_string(&path.to_string_lossy()).unwrap()
+    );
+
+    let error = Engine::new()
+        .eval(&source)
+        .err()
+        .expect("broken exported function should fail")
+        .to_string();
+    assert!(error.contains(" --> 2:21"));
+    assert!(error.contains(r#"2 |   "broken": fn() => missing"#));
+    assert!(error.contains(" called from 2:1"));
+    assert!(error.contains("2 | module.broken()"));
 }

@@ -8,6 +8,7 @@ mod value;
 use std::fmt;
 use std::path::Path;
 
+use ast::Span;
 pub use module::Module;
 pub use parser::is_incomplete;
 pub use value::{NamedArguments, Value};
@@ -22,7 +23,31 @@ pub enum Error {
     Call(String),
     Io(std::io::Error),
     Sqlx(sqlx::Error),
-    Context { message: String, source: Box<Error> },
+    Context {
+        message: String,
+        source: Box<Error>,
+    },
+    Located {
+        span: Span,
+        source: Box<Error>,
+    },
+    Frame {
+        span: Span,
+        source: Box<Error>,
+    },
+    Diagnostic {
+        line: usize,
+        column: usize,
+        width: usize,
+        excerpt: String,
+        source: Box<Error>,
+    },
+    DiagnosticFrame {
+        line: usize,
+        column: usize,
+        excerpt: String,
+        source: Box<Error>,
+    },
 }
 
 impl Error {
@@ -30,6 +55,69 @@ impl Error {
         Self::Context {
             message: message.into(),
             source: Box::new(self),
+        }
+    }
+
+    fn at(self, span: Span) -> Self {
+        if self.has_location() {
+            self
+        } else {
+            Self::Located {
+                span,
+                source: Box::new(self),
+            }
+        }
+    }
+
+    pub(crate) fn frame(self, span: Span) -> Self {
+        Self::Frame {
+            span,
+            source: Box::new(self),
+        }
+    }
+
+    fn has_location(&self) -> bool {
+        match self {
+            Self::Located { .. } | Self::Diagnostic { .. } | Self::DiagnosticFrame { .. } => true,
+            Self::Context { source, .. } | Self::Frame { source, .. } => source.has_location(),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn with_source(self, source_text: &str) -> Self {
+        match self {
+            Self::Located { span, source } => {
+                let (line, column, excerpt, line_end) = location(source_text, span);
+                let width = source_text[span.start.min(source_text.len())
+                    ..span
+                        .end
+                        .min(line_end)
+                        .max(span.start.min(source_text.len()))]
+                    .chars()
+                    .count()
+                    .max(1);
+                Self::Diagnostic {
+                    line,
+                    column,
+                    width,
+                    excerpt,
+                    source,
+                }
+            }
+            Self::Frame { span, source } => {
+                let (line, column, excerpt, _) = location(source_text, span);
+                Self::DiagnosticFrame {
+                    line,
+                    column,
+                    excerpt,
+                    source: Box::new(source.with_source(source_text)),
+                }
+            }
+            Self::Context { message, source } => Self::Context {
+                message,
+                source: Box::new(source.with_source(source_text)),
+            },
+            error => error,
         }
     }
 }
@@ -44,6 +132,30 @@ impl fmt::Display for Error {
             Self::Io(error) => write!(formatter, "I/O error: {error}"),
             Self::Sqlx(error) => write!(formatter, "sqlite error: {error}"),
             Self::Context { message, source } => write!(formatter, "{message}: {source}"),
+            Self::Located { source, .. } => write!(formatter, "{source}"),
+            Self::Diagnostic {
+                line,
+                column,
+                width,
+                excerpt,
+                source,
+            } => write!(
+                formatter,
+                "{source}\n --> {line}:{column}\n  |\n{line} | {excerpt}\n  | {}{}",
+                " ".repeat(column.saturating_sub(1)),
+                "^".repeat(*width)
+            ),
+            Self::Frame { source, .. } => write!(formatter, "{source}"),
+            Self::DiagnosticFrame {
+                line,
+                column,
+                excerpt,
+                source,
+            } => write!(
+                formatter,
+                "{source}\n called from {line}:{column}\n{line} | {excerpt}\n  | {}^",
+                " ".repeat(column.saturating_sub(1))
+            ),
         }
     }
 }
@@ -54,9 +166,26 @@ impl std::error::Error for Error {
             Self::Io(error) => Some(error),
             Self::Sqlx(error) => Some(error),
             Self::Context { source, .. } => Some(source),
+            Self::Located { source, .. }
+            | Self::Frame { source, .. }
+            | Self::Diagnostic { source, .. }
+            | Self::DiagnosticFrame { source, .. } => Some(source),
             _ => None,
         }
     }
+}
+
+fn location(source_text: &str, span: Span) -> (usize, usize, String, usize) {
+    let start = span.start.min(source_text.len());
+    let before = &source_text[..start];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+    let line_end = source_text[start..]
+        .find('\n')
+        .map_or(source_text.len(), |index| start + index);
+    let excerpt = source_text[line_start..line_end].to_owned();
+    let column = source_text[line_start..start].chars().count() + 1;
+    (line, column, excerpt, line_end)
 }
 
 impl From<sqlx::Error> for Error {
@@ -90,6 +219,7 @@ impl Engine {
 
     pub fn eval(&mut self, source: &str) -> Result<Value> {
         eval::eval_statements(&parser::parse(source)?, &self.environment)
+            .map_err(|error| error.with_source(source))
     }
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value> {

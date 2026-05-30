@@ -13,11 +13,14 @@ pub fn install(environment: &Environment) {
     environment.set("len", Value::native(len));
     environment.set("keys", Value::native(keys));
     environment.set("values", Value::native(values));
+    environment.set("pairs", Value::native(pairs));
     environment.set("get", Value::native(get));
     environment.set("has", Value::native(has));
     environment.set("push", Value::native(push));
     environment.set("map", Value::native(map));
     environment.set("filter", Value::native(filter));
+    environment.set("range", Value::native(range));
+    environment.set("reduce", Value::native(reduce));
     let load_environment = environment.clone();
     environment.set(
         "load",
@@ -81,6 +84,20 @@ fn values(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Valu
         return Err(Error::Type("values expects an object".into()));
     };
     Ok(Value::Array(values.values().cloned().collect()))
+}
+
+fn pairs(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Object(values) = &positional[0] else {
+        return Err(Error::Type("pairs expects an object".into()));
+    };
+    Ok(Value::Array(
+        values
+            .iter()
+            .map(|(key, value)| Value::Array(vec![Value::String(key.clone()), value.clone()]))
+            .collect(),
+    ))
 }
 
 fn get(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
@@ -159,6 +176,58 @@ fn filter(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Valu
     Ok(Value::Array(result))
 }
 
+fn range(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    let (mut current, stop, step) = match positional.as_slice() {
+        [stop] => (0, integer(stop)?, 1),
+        [start, stop] => (integer(start)?, integer(stop)?, 1),
+        [start, stop, step] => (integer(start)?, integer(stop)?, integer(step)?),
+        _ => {
+            return Err(Error::Call(
+                "range expects stop, start and stop, or start, stop, and step".into(),
+            ));
+        }
+    };
+    if step == 0 {
+        return Err(Error::Type("range step cannot be zero".into()));
+    }
+    let mut values = vec![];
+    while (step > 0 && current < stop) || (step < 0 && current > stop) {
+        values.push(Value::Number(current.into()));
+        current = current
+            .checked_add(step)
+            .ok_or_else(|| Error::Type("range overflowed".into()))?;
+    }
+    Ok(Value::Array(values))
+}
+
+fn reduce(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 3)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type("reduce expects an array".into()));
+    };
+    let function = &positional[1];
+    let mut result = positional[2].clone();
+    for value in values {
+        result = call_value(
+            function.clone(),
+            vec![result, value.clone()],
+            BTreeMap::new(),
+        )?;
+    }
+    Ok(result)
+}
+
+fn integer(value: &Value) -> Result<i64> {
+    let Value::Number(value) = value else {
+        return Err(Error::Type("expected an integer".into()));
+    };
+    value
+        .as_i64()
+        .ok_or_else(|| Error::Type("expected an integer".into()))
+}
+
 fn load(
     environment: &Environment,
     positional: Vec<Value>,
@@ -172,9 +241,10 @@ fn load(
     let context = || format!("while loading {path}");
     let source =
         std::fs::read_to_string(path).map_err(|error| Error::from(error).context(context()))?;
-    let environment = environment.child();
+    let environment = environment.child_with_source(source.clone());
     let statements = parser::parse(&source).map_err(|error| error.context(context()))?;
     crate::eval::eval_statements(&statements, &environment)
+        .map_err(|error| error.with_source(&source))
         .map_err(|error| error.context(context()))
 }
 

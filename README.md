@@ -45,11 +45,14 @@ JSON-shaped values have a small collection toolkit:
 
 ```snare
 keys({"b": 2, "a": 1})                         // ["a", "b"]
+pairs({"a": 1})                                // [["a", 1]]
 get({"answer": 42}, "answer")                  // 42
 get([1, 2, 3], -1)                             // 3
 push([1, 2], 3)                                // [1, 2, 3]
 map([1, 2, 3], fn(value) => value * 2)         // [2, 4, 6]
 filter([1, 2, 3, 4], fn(value) => value > 2)   // [3, 4]
+range(1, 6, 2)                                 // [1, 3, 5]
+reduce([1, 2, 3], fn(total, value) => total + value, 0) // 6
 ```
 
 SQLite is intentionally present in the first milestone:
@@ -124,7 +127,7 @@ let math = load("math.snare");
 math.double(21)
 ```
 
-The current implementation is a deliberately small kernel. A useful next
-language milestone is improved diagnostics. File and module errors already
-include their source path; expression-level source locations and call traces
-are still future work.
+The current implementation is a deliberately small kernel. File and module
+errors include their source path, runtime errors point to the failing
+expression, and function errors include call frames. Useful next language work
+includes a broader standard library.

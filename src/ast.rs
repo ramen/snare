@@ -1,5 +1,17 @@
+#[derive(Clone, Copy, Debug)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Clone, Debug)]
-pub enum Statement {
+pub struct Statement {
+    pub kind: StatementKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum StatementKind {
     Let(String, Expr),
     Assign(String, Expr),
     Expr(Expr),
@@ -12,7 +24,13 @@ pub struct Parameter {
 }
 
 #[derive(Clone, Debug)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum ExprKind {
     Null,
     Bool(bool),
     Number(serde_json::Number),
