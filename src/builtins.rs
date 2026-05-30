@@ -4,13 +4,25 @@ use std::sync::OnceLock;
 use sqlx::{Column, Row, TypeInfo, ValueRef};
 use tokio::runtime::Runtime;
 
-use crate::eval::Environment;
+use crate::eval::{Environment, call_value};
 use crate::value::Value;
-use crate::{Error, Module, Result};
+use crate::{Error, Module, Result, parser};
 
 pub fn install(environment: &Environment) {
     environment.set("print", Value::native(print));
     environment.set("len", Value::native(len));
+    environment.set("keys", Value::native(keys));
+    environment.set("values", Value::native(values));
+    environment.set("get", Value::native(get));
+    environment.set("has", Value::native(has));
+    environment.set("push", Value::native(push));
+    environment.set("map", Value::native(map));
+    environment.set("filter", Value::native(filter));
+    let load_environment = environment.clone();
+    environment.set(
+        "load",
+        Value::native(move |positional, named| load(&load_environment, positional, named)),
+    );
 
     let open = Value::native(sqlite_open);
     let query = Value::native(sqlite_query);
@@ -49,6 +61,131 @@ fn len(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> 
         _ => return Err(Error::Type("len expects a string, array, or object".into())),
     };
     Ok(Value::Number(len.into()))
+}
+
+fn keys(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Object(values) = &positional[0] else {
+        return Err(Error::Type("keys expects an object".into()));
+    };
+    Ok(Value::Array(
+        values.keys().cloned().map(Value::String).collect(),
+    ))
+}
+
+fn values(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Object(values) = &positional[0] else {
+        return Err(Error::Type("values expects an object".into()));
+    };
+    Ok(Value::Array(values.values().cloned().collect()))
+}
+
+fn get(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    if !(2..=3).contains(&positional.len()) {
+        return Err(Error::Call(
+            "get expects a collection, key, and optional default".into(),
+        ));
+    }
+    let default = positional.get(2).cloned().unwrap_or(Value::Null);
+    match (&positional[0], &positional[1]) {
+        (Value::Object(values), Value::String(key)) => {
+            Ok(values.get(key).cloned().unwrap_or(default))
+        }
+        (Value::Array(values), Value::Number(index)) => {
+            Ok(array_index(values, index).cloned().unwrap_or(default))
+        }
+        _ => Err(Error::Type(
+            "get expects an object and string key, or an array and integer index".into(),
+        )),
+    }
+}
+
+fn has(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    match (&positional[0], &positional[1]) {
+        (Value::Object(values), Value::String(key)) => Ok(Value::Bool(values.contains_key(key))),
+        (Value::Array(values), Value::Number(index)) => {
+            Ok(Value::Bool(array_index(values, index).is_some()))
+        }
+        _ => Err(Error::Type(
+            "has expects an object and string key, or an array and integer index".into(),
+        )),
+    }
+}
+
+fn push(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type("push expects an array".into()));
+    };
+    let mut result = values.clone();
+    result.push(positional[1].clone());
+    Ok(Value::Array(result))
+}
+
+fn map(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type("map expects an array".into()));
+    };
+    let function = &positional[1];
+    values
+        .iter()
+        .map(|value| call_value(function.clone(), vec![value.clone()], BTreeMap::new()))
+        .collect::<Result<_>>()
+        .map(Value::Array)
+}
+
+fn filter(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type("filter expects an array".into()));
+    };
+    let function = &positional[1];
+    let mut result = vec![];
+    for value in values {
+        if call_value(function.clone(), vec![value.clone()], BTreeMap::new())?.truthy() {
+            result.push(value.clone());
+        }
+    }
+    Ok(Value::Array(result))
+}
+
+fn load(
+    environment: &Environment,
+    positional: Vec<Value>,
+    named: BTreeMap<String, Value>,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::String(path) = &positional[0] else {
+        return Err(Error::Type("load expects a path string".into()));
+    };
+    let context = || format!("while loading {path}");
+    let source =
+        std::fs::read_to_string(path).map_err(|error| Error::from(error).context(context()))?;
+    let environment = environment.child();
+    let statements = parser::parse(&source).map_err(|error| error.context(context()))?;
+    crate::eval::eval_statements(&statements, &environment)
+        .map_err(|error| error.context(context()))
+}
+
+fn array_index<'a>(values: &'a [Value], index: &serde_json::Number) -> Option<&'a Value> {
+    let index = index.as_i64()?;
+    let index = if index < 0 {
+        values.len().checked_sub(index.unsigned_abs() as usize)?
+    } else {
+        usize::try_from(index).ok()?
+    };
+    values.get(index)
 }
 
 fn sqlite_open(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {

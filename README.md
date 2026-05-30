@@ -41,6 +41,17 @@ if len([1, 2]) > 0 then "yes" else "no"
 do { let x = 2; x * 3 }
 ```
 
+JSON-shaped values have a small collection toolkit:
+
+```snare
+keys({"b": 2, "a": 1})                         // ["a", "b"]
+get({"answer": 42}, "answer")                  // 42
+get([1, 2, 3], -1)                             // 3
+push([1, 2], 3)                                // [1, 2, 3]
+map([1, 2, 3], fn(value) => value * 2)         // [2, 4, 6]
+filter([1, 2, 3, 4], fn(value) => value > 2)   // [3, 4]
+```
+
 SQLite is intentionally present in the first milestone:
 
 ```snare
@@ -97,6 +108,23 @@ engine.register_module("app", app);
 engine.eval("app.greet()")?;
 ```
 
-The current implementation is a deliberately small kernel. Useful next
-language work includes file-backed modules, richer collection operations, and
-improved diagnostics.
+Snare files can expose modules too. A module file returns an object:
+
+```snare
+// math.snare
+{
+  "double": fn(value) => value * 2
+}
+```
+
+Load it from a script or the REPL:
+
+```snare
+let math = load("math.snare");
+math.double(21)
+```
+
+The current implementation is a deliberately small kernel. A useful next
+language milestone is improved diagnostics. File and module errors already
+include their source path; expression-level source locations and call traces
+are still future work.

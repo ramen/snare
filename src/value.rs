@@ -94,12 +94,40 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Null => write!(formatter, "null"),
+            Self::Bool(value) => write!(formatter, "{value}"),
+            Self::Number(value) => write!(formatter, "{value}"),
+            Self::String(value) => write!(
+                formatter,
+                "{}",
+                serde_json::to_string(value).expect("string is JSON")
+            ),
+            Self::Array(values) => {
+                write!(formatter, "[")?;
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        write!(formatter, ",")?;
+                    }
+                    write!(formatter, "{value}")?;
+                }
+                write!(formatter, "]")
+            }
+            Self::Object(values) => {
+                write!(formatter, "{{")?;
+                for (index, (key, value)) in values.iter().enumerate() {
+                    if index > 0 {
+                        write!(formatter, ",")?;
+                    }
+                    write!(
+                        formatter,
+                        "{}:{value}",
+                        serde_json::to_string(key).expect("object key is JSON")
+                    )?;
+                }
+                write!(formatter, "}}")
+            }
             Self::Function(_) | Self::Native(_) => write!(formatter, "<function>"),
             Self::Database(_) => write!(formatter, "<sqlite database>"),
-            value => match value.to_json() {
-                Ok(value) => write!(formatter, "{value}"),
-                Err(_) => unreachable!(),
-            },
         }
     }
 }

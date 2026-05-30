@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::env;
-use std::fs;
 use std::io::{self, IsTerminal, Read};
 
 use rustyline::completion::Completer;
@@ -162,11 +161,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let source = if path == "-" {
             let mut source = String::new();
             io::stdin().read_to_string(&mut source)?;
-            source
+            Some(source)
         } else {
-            fs::read_to_string(path)?
+            None
         };
-        let value = engine.eval(&source)?;
+        let value = match source {
+            Some(source) => engine.eval(&source)?,
+            None => engine.eval_file(path)?,
+        };
         if value.to_string() != "null" {
             println!("{value}");
         }

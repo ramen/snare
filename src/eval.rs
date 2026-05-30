@@ -153,6 +153,14 @@ fn call(function: Value, arguments: &[Argument], environment: &Environment) -> R
             }
         }
     }
+    call_value(function, positional, named)
+}
+
+pub fn call_value(
+    function: Value,
+    positional: Vec<Value>,
+    named: BTreeMap<String, Value>,
+) -> Result<Value> {
     match function {
         Value::Native(function) => function(positional, named),
         Value::Function(function) => call_function(&function, positional, named),

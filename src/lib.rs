@@ -6,6 +6,7 @@ mod parser;
 mod value;
 
 use std::fmt;
+use std::path::Path;
 
 pub use module::Module;
 pub use parser::is_incomplete;
@@ -19,7 +20,18 @@ pub enum Error {
     Name(String),
     Type(String),
     Call(String),
+    Io(std::io::Error),
     Sqlx(sqlx::Error),
+    Context { message: String, source: Box<Error> },
+}
+
+impl Error {
+    pub fn context(self, message: impl Into<String>) -> Self {
+        Self::Context {
+            message: message.into(),
+            source: Box::new(self),
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -29,16 +41,33 @@ impl fmt::Display for Error {
             Self::Name(message) => write!(formatter, "name error: {message}"),
             Self::Type(message) => write!(formatter, "type error: {message}"),
             Self::Call(message) => write!(formatter, "call error: {message}"),
+            Self::Io(error) => write!(formatter, "I/O error: {error}"),
             Self::Sqlx(error) => write!(formatter, "sqlite error: {error}"),
+            Self::Context { message, source } => write!(formatter, "{message}: {source}"),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Sqlx(error) => Some(error),
+            Self::Context { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 impl From<sqlx::Error> for Error {
     fn from(error: sqlx::Error) -> Self {
         Self::Sqlx(error)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
     }
 }
 
@@ -61,6 +90,14 @@ impl Engine {
 
     pub fn eval(&mut self, source: &str) -> Result<Value> {
         eval::eval_statements(&parser::parse(source)?, &self.environment)
+    }
+
+    pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value> {
+        let path = path.as_ref();
+        let context = || format!("while evaluating {}", path.display());
+        let source =
+            std::fs::read_to_string(path).map_err(|error| Error::from(error).context(context()))?;
+        self.eval(&source).map_err(|error| error.context(context()))
     }
 
     pub fn set(&mut self, name: impl Into<String>, value: Value) {

@@ -1,7 +1,9 @@
 use std::cell::Cell;
+use std::fs;
 use std::rc::Rc;
 
 use snare::{Engine, Module, Value, is_incomplete};
+use tempfile::tempdir;
 
 fn eval(source: &str) -> String {
     Engine::new().eval(source).unwrap().to_string()
@@ -157,4 +159,92 @@ fn sqlite_is_available_as_a_module() {
             .to_string(),
         r#"[{"answer":42}]"#
     );
+}
+
+#[test]
+fn collection_helpers_work_with_json_values() {
+    assert_eq!(eval(r#"keys({"b": 2, "a": 1})"#), r#"["a","b"]"#);
+    assert_eq!(eval(r#"values({"b": 2, "a": 1})"#), "[1,2]");
+    assert_eq!(eval(r#"get({"answer": 42}, "answer")"#), "42");
+    assert_eq!(eval(r#"get({}, "missing", "default")"#), r#""default""#);
+    assert_eq!(eval("get([1, 2, 3], -1)"), "3");
+    assert_eq!(eval(r#"has({"answer": 42}, "answer")"#), "true");
+    assert_eq!(eval("push([1, 2], 3)"), "[1,2,3]");
+}
+
+#[test]
+fn collection_callbacks_can_be_snare_functions() {
+    assert_eq!(eval("map([1, 2, 3], fn(value) => value * 2)"), "[2,4,6]");
+    assert_eq!(
+        eval("filter([1, 2, 3, 4], fn(value) => value % 2 == 0)"),
+        "[2,4]"
+    );
+}
+
+#[test]
+fn collection_helpers_make_sqlite_rows_easy_to_explore() {
+    let mut engine = Engine::new();
+    engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
+    assert_eq!(
+        engine
+            .eval(
+                r#"map(sqlite.query(db, "select 1 as id union all select 2 as id"), fn(row) => row.id)"#
+            )
+            .unwrap()
+            .to_string(),
+        "[1,2]"
+    );
+}
+
+#[test]
+fn files_can_export_first_class_modules() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("math.snare");
+    fs::write(
+        &path,
+        r#"
+        let secret = 40;
+        {
+            "answer": secret + 2,
+            "double": fn(value) => value * 2
+        }
+        "#,
+    )
+    .unwrap();
+    let path = serde_json::to_string(&path.to_string_lossy()).unwrap();
+
+    assert_eq!(
+        eval(&format!(
+            r#"let math = load({path}); math.answer + math.double(4)"#
+        )),
+        "50"
+    );
+}
+
+#[test]
+fn file_errors_include_source_context() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("broken.snare");
+    fs::write(&path, "missing_name").unwrap();
+
+    let error = Engine::new()
+        .eval_file(&path)
+        .err()
+        .expect("broken module should fail")
+        .to_string();
+    assert!(error.contains(&format!("while evaluating {}", path.display())));
+    assert!(error.contains("name error: unknown name: missing_name"));
+
+    let missing = directory.path().join("missing.snare");
+    let source = format!(
+        "load({})",
+        serde_json::to_string(&missing.to_string_lossy()).unwrap()
+    );
+    let error = Engine::new()
+        .eval(&source)
+        .err()
+        .expect("missing module should fail")
+        .to_string();
+    assert!(error.contains(&format!("while loading {}", missing.display())));
+    assert!(error.contains("I/O error"));
 }

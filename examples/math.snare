@@ -1,0 +1,3 @@
+{
+  "double": fn(value) => value * 2
+}
