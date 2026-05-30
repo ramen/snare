@@ -59,16 +59,16 @@ fn incomplete_input_can_be_continued_by_the_repl() {
 #[test]
 fn sqlite_can_be_explored_from_the_language() {
     let mut engine = Engine::new();
-    engine.eval(r#"let db = sqlite_open(":memory:");"#).unwrap();
+    engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     engine
-        .eval(r#"sqlite_execute(db, "create table notes (id integer, body text)");"#)
+        .eval(r#"sqlite.execute(db, "create table notes (id integer, body text)");"#)
         .unwrap();
     engine
-        .eval(r#"sqlite_execute(db, "insert into notes values (?, ?)", [1, "hello"]);"#)
+        .eval(r#"sqlite.execute(db, "insert into notes values (?, ?)", [1, "hello"]);"#)
         .unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite_query(db, "select * from notes")"#)
+            .eval(r#"sqlite.query(db, "select * from notes")"#)
             .unwrap()
             .to_string(),
         r#"[{"body":"hello","id":1}]"#
@@ -78,23 +78,23 @@ fn sqlite_can_be_explored_from_the_language() {
 #[test]
 fn sqlite_supports_runtime_types_and_json_byte_arrays() {
     let mut engine = Engine::new();
-    engine.eval(r#"let db = sqlite_open(":memory:");"#).unwrap();
+    engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite_query(db, "select ? as value", ["hello"])"#)
+            .eval(r#"sqlite.query(db, "select ? as value", ["hello"])"#)
             .unwrap()
             .to_string(),
         r#"[{"value":"hello"}]"#
     );
     engine
-        .eval(r#"sqlite_execute(db, "create table files (payload blob)");"#)
+        .eval(r#"sqlite.execute(db, "create table files (payload blob)");"#)
         .unwrap();
     engine
-        .eval(r#"sqlite_execute(db, "insert into files values (?)", [[0, 127, 255]]);"#)
+        .eval(r#"sqlite.execute(db, "insert into files values (?)", [[0, 127, 255]]);"#)
         .unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite_query(db, "select payload from files")"#)
+            .eval(r#"sqlite.query(db, "select payload from files")"#)
             .unwrap()
             .to_string(),
         r#"[{"payload":[0,127,255]}]"#
@@ -244,6 +244,13 @@ fn globals_exposes_the_live_root_namespace() {
             .unwrap()
             .to_string(),
         r#"["execute","open","query"]"#
+    );
+    assert_eq!(
+        engine
+            .eval(r#"filter(keys(globals()), fn(name) => starts_with("sqlite", name))"#)
+            .unwrap()
+            .to_string(),
+        r#"["sqlite"]"#
     );
     engine.eval("let discovered = 42;").unwrap();
     assert_eq!(

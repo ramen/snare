@@ -46,14 +46,10 @@ pub fn install(environment: &Environment) {
     let execute = Value::native(sqlite_execute);
     let mut sqlite = Module::new();
     sqlite
-        .set("open", open.clone())
-        .set("query", query.clone())
-        .set("execute", execute.clone());
+        .set("open", open)
+        .set("query", query)
+        .set("execute", execute);
     environment.set("sqlite", sqlite.into());
-
-    environment.set("sqlite_open", open);
-    environment.set("sqlite_query", query);
-    environment.set("sqlite_execute", execute);
 }
 
 fn runtime() -> &'static Runtime {
