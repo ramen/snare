@@ -79,6 +79,13 @@ starts_with("Sn", "Snare")                      // true
 replace("world", "Snare", "hello, world")       // "hello, Snare"
 ```
 
+`print` writes strings without JSON quotes or escapes and separates multiple
+arguments with spaces:
+
+```snare
+print("hello", "world")                         // prints: hello world
+```
+
 The global namespace is inspectable from the REPL:
 
 ```snare

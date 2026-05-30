@@ -78,8 +78,14 @@ fn runtime() -> &'static Runtime {
 
 fn print(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
-    expect_len(&positional, 1)?;
-    println!("{}", positional[0]);
+    println!(
+        "{}",
+        positional
+            .iter()
+            .map(Value::to_print_string)
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     Ok(Value::Null)
 }
 

@@ -104,6 +104,13 @@ impl Value {
         }
     }
 
+    pub fn to_print_string(&self) -> String {
+        match self {
+            Self::String(value) => value.clone(),
+            value => value.to_string(),
+        }
+    }
+
     pub fn equal(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,

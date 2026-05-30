@@ -250,6 +250,15 @@ fn values_have_conservative_conversion_helpers() {
 }
 
 #[test]
+fn print_strings_are_unquoted_while_repl_strings_remain_json_shaped() {
+    assert_eq!(
+        Value::String("hello\nworld".into()).to_print_string(),
+        "hello\nworld"
+    );
+    assert_eq!(Value::String("hello".into()).to_string(), r#""hello""#);
+}
+
+#[test]
 fn strings_and_arrays_have_sequence_helpers() {
     assert_eq!(eval("first([1, 2, 3])"), "1");
     assert_eq!(eval("rest([1, 2, 3])"), "[2,3]");
