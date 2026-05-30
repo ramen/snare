@@ -8,7 +8,8 @@ use crate::ast::{Expr, Parameter};
 use crate::eval::Environment;
 use crate::{Error, Result};
 
-pub type NamedArguments = BTreeMap<String, Value>;
+pub type ValueMap = BTreeMap<String, Value>;
+pub type NamedArguments = ValueMap;
 pub type NativeFunction = Rc<dyn Fn(Vec<Value>, NamedArguments) -> Result<Value>>;
 
 #[derive(Clone)]
@@ -18,7 +19,7 @@ pub enum Value {
     Number(serde_json::Number),
     String(String),
     Array(Vec<Value>),
-    Object(BTreeMap<String, Value>),
+    Object(ValueMap),
     Function(Rc<Function>),
     Native(NativeFunction),
     Database(SqlitePool),

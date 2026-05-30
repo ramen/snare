@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-
-use crate::{NamedArguments, Result, Value};
+use crate::{NamedArguments, Result, Value, ValueMap};
 
 #[derive(Default)]
 pub struct Module {
-    values: BTreeMap<String, Value>,
+    values: ValueMap,
 }
 
 impl Module {

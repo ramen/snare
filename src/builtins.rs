@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use sqlx::{Column, Row, TypeInfo, ValueRef};
 use tokio::runtime::Runtime;
 
 use crate::eval::{Environment, call_value};
-use crate::value::Value;
+use crate::value::{NamedArguments, Value, ValueMap};
 use crate::{Error, Module, Result, parser};
 
 pub fn install(environment: &Environment) {
@@ -47,14 +46,14 @@ fn runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("tokio runtime"))
 }
 
-fn print(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn print(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     println!("{}", positional[0]);
     Ok(Value::Null)
 }
 
-fn len(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn len(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let len = match &positional[0] {
@@ -66,7 +65,7 @@ fn len(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> 
     Ok(Value::Number(len.into()))
 }
 
-fn keys(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn keys(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let Value::Object(values) = &positional[0] else {
@@ -77,7 +76,7 @@ fn keys(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value>
     ))
 }
 
-fn values(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn values(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let Value::Object(values) = &positional[0] else {
@@ -86,7 +85,7 @@ fn values(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Valu
     Ok(Value::Array(values.values().cloned().collect()))
 }
 
-fn pairs(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn pairs(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let Value::Object(values) = &positional[0] else {
@@ -100,7 +99,7 @@ fn pairs(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value
     ))
 }
 
-fn get(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn get(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     if !(2..=3).contains(&positional.len()) {
         return Err(Error::Call(
@@ -121,7 +120,7 @@ fn get(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> 
     }
 }
 
-fn has(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn has(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
     match (&positional[0], &positional[1]) {
@@ -135,7 +134,7 @@ fn has(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> 
     }
 }
 
-fn push(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn push(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
     let Value::Array(values) = &positional[0] else {
@@ -146,7 +145,7 @@ fn push(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value>
     Ok(Value::Array(result))
 }
 
-fn map(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn map(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
     let Value::Array(values) = &positional[0] else {
@@ -155,12 +154,12 @@ fn map(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> 
     let function = &positional[1];
     values
         .iter()
-        .map(|value| call_value(function.clone(), vec![value.clone()], BTreeMap::new()))
+        .map(|value| call_value(function.clone(), vec![value.clone()], NamedArguments::new()))
         .collect::<Result<_>>()
         .map(Value::Array)
 }
 
-fn filter(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn filter(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
     let Value::Array(values) = &positional[0] else {
@@ -169,14 +168,14 @@ fn filter(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Valu
     let function = &positional[1];
     let mut result = vec![];
     for value in values {
-        if call_value(function.clone(), vec![value.clone()], BTreeMap::new())?.truthy() {
+        if call_value(function.clone(), vec![value.clone()], NamedArguments::new())?.truthy() {
             result.push(value.clone());
         }
     }
     Ok(Value::Array(result))
 }
 
-fn range(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn range(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     let (mut current, stop, step) = match positional.as_slice() {
         [stop] => (0, integer(stop)?, 1),
@@ -201,7 +200,7 @@ fn range(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value
     Ok(Value::Array(values))
 }
 
-fn reduce(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn reduce(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 3)?;
     let Value::Array(values) = &positional[0] else {
@@ -213,7 +212,7 @@ fn reduce(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Valu
         result = call_value(
             function.clone(),
             vec![result, value.clone()],
-            BTreeMap::new(),
+            NamedArguments::new(),
         )?;
     }
     Ok(result)
@@ -228,11 +227,7 @@ fn integer(value: &Value) -> Result<i64> {
         .ok_or_else(|| Error::Type("expected an integer".into()))
 }
 
-fn load(
-    environment: &Environment,
-    positional: Vec<Value>,
-    named: BTreeMap<String, Value>,
-) -> Result<Value> {
+fn load(environment: &Environment, positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let Value::String(path) = &positional[0] else {
@@ -258,7 +253,7 @@ fn array_index<'a>(values: &'a [Value], index: &serde_json::Number) -> Option<&'
     values.get(index)
 }
 
-fn sqlite_open(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn sqlite_open(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
     let Value::String(path) = &positional[0] else {
@@ -275,7 +270,7 @@ fn sqlite_open(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result
     Ok(Value::Database(pool))
 }
 
-fn sqlite_query(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn sqlite_query(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     if !(2..=3).contains(&positional.len()) {
         return Err(Error::Call(
@@ -294,7 +289,7 @@ fn sqlite_query(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Resul
         .map(Value::Array)
 }
 
-fn sqlite_execute(positional: Vec<Value>, named: BTreeMap<String, Value>) -> Result<Value> {
+fn sqlite_execute(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     if !(2..=3).contains(&positional.len()) {
         return Err(Error::Call(
@@ -353,7 +348,7 @@ fn database_and_sql(positional: &[Value]) -> Result<(&sqlx::SqlitePool, &str)> {
 }
 
 fn row_to_value(row: &sqlx::sqlite::SqliteRow) -> Result<Value> {
-    let mut object = BTreeMap::new();
+    let mut object = ValueMap::new();
     for (index, column) in row.columns().iter().enumerate() {
         let raw = row.try_get_raw(index)?;
         let value = if raw.is_null() {
@@ -408,7 +403,7 @@ fn expect_len(positional: &[Value], expected: usize) -> Result<()> {
     }
 }
 
-fn reject_named(named: &BTreeMap<String, Value>) -> Result<()> {
+fn reject_named(named: &NamedArguments) -> Result<()> {
     if named.is_empty() {
         Ok(())
     } else {

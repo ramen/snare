@@ -11,7 +11,7 @@ use std::path::Path;
 use ast::Span;
 pub use module::Module;
 pub use parser::is_incomplete;
-pub use value::{NamedArguments, Value};
+pub use value::{NamedArguments, Value, ValueMap};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

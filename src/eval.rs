@@ -1,9 +1,8 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::ast::{Argument, Expr, ExprKind, Statement, StatementKind};
-use crate::value::{Function, Value};
+use crate::value::{Function, NamedArguments, Value, ValueMap};
 use crate::{Error, Result};
 
 #[derive(Clone, Default)]
@@ -13,7 +12,7 @@ pub struct Environment(Rc<RefCell<Scope>>);
 struct Scope {
     parent: Option<Environment>,
     source: Option<Rc<str>>,
-    values: BTreeMap<String, Value>,
+    values: ValueMap,
 }
 
 impl Environment {
@@ -21,7 +20,7 @@ impl Environment {
         Self(Rc::new(RefCell::new(Scope {
             parent: Some(self.clone()),
             source: None,
-            values: BTreeMap::new(),
+            values: ValueMap::new(),
         })))
     }
 
@@ -29,7 +28,7 @@ impl Environment {
         Self(Rc::new(RefCell::new(Scope {
             parent: Some(self.clone()),
             source: Some(source.into()),
-            values: BTreeMap::new(),
+            values: ValueMap::new(),
         })))
     }
 
@@ -163,7 +162,7 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
 
 fn call(function: Value, arguments: &[Argument], environment: &Environment) -> Result<Value> {
     let mut positional = vec![];
-    let mut named = BTreeMap::new();
+    let mut named = NamedArguments::new();
     for argument in arguments {
         match argument {
             Argument::Positional(expr) if named.is_empty() => {
@@ -187,11 +186,7 @@ fn call(function: Value, arguments: &[Argument], environment: &Environment) -> R
     call_value(function, positional, named)
 }
 
-pub fn call_value(
-    function: Value,
-    positional: Vec<Value>,
-    named: BTreeMap<String, Value>,
-) -> Result<Value> {
+pub fn call_value(function: Value, positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     match function {
         Value::Native(function) => function(positional, named),
         Value::Function(function) => call_function(&function, positional, named),
@@ -202,7 +197,7 @@ pub fn call_value(
 fn call_function(
     function: &Function,
     positional: Vec<Value>,
-    mut named: BTreeMap<String, Value>,
+    mut named: NamedArguments,
 ) -> Result<Value> {
     if positional.len() > function.parameters.len() {
         return Err(Error::Call("too many positional arguments".into()));
