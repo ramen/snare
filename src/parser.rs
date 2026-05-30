@@ -1,0 +1,197 @@
+use pest::Parser;
+use pest::iterators::Pair;
+use pest_derive::Parser;
+
+use crate::ast::{Argument, Expr, Parameter, Statement};
+use crate::{Error, Result};
+
+#[derive(Parser)]
+#[grammar = "snare.pest"]
+struct SnareParser;
+
+pub fn parse(source: &str) -> Result<Vec<Statement>> {
+    let mut pairs = SnareParser::parse(Rule::program, source)
+        .map_err(|error| Error::Parse(error.to_string()))?;
+    pairs
+        .next()
+        .expect("program")
+        .into_inner()
+        .filter(|pair| pair.as_rule() != Rule::EOI)
+        .map(parse_statement)
+        .collect()
+}
+
+fn parse_statement(pair: Pair<Rule>) -> Result<Statement> {
+    match pair.as_rule() {
+        Rule::let_statement => {
+            let mut inner = pair.into_inner();
+            let name = inner.next().expect("let name").as_str().to_owned();
+            Ok(Statement::Let(
+                name,
+                parse_expr(inner.next().expect("let value"))?,
+            ))
+        }
+        Rule::expression_statement => Ok(Statement::Expr(parse_expr(
+            pair.into_inner().next().expect("expression"),
+        )?)),
+        _ => unreachable!("unexpected statement: {:?}", pair.as_rule()),
+    }
+}
+
+fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
+    match pair.as_rule() {
+        Rule::expression => {
+            let mut inner = pair.into_inner();
+            let first = parse_expr(inner.next().expect("left operand"))?;
+            let mut rest = vec![];
+            while let Some(operator) = inner.next() {
+                let right = parse_expr(inner.next().expect("right operand"))?;
+                rest.push((operator.as_str().to_owned(), right));
+            }
+            Ok(parse_binary(first, &rest, &mut 0, 1))
+        }
+        Rule::prefix => {
+            let mut inner: Vec<_> = pair.into_inner().collect();
+            let value = parse_expr(inner.pop().expect("prefix value"))?;
+            inner.into_iter().rev().try_fold(value, |value, operator| {
+                Ok(Expr::Unary(operator.as_str().to_owned(), Box::new(value)))
+            })
+        }
+        Rule::postfix => {
+            let mut inner = pair.into_inner();
+            let value = parse_expr(inner.next().expect("postfix value"))?;
+            inner.try_fold(value, |value, suffix| match suffix.as_rule() {
+                Rule::call => Ok(Expr::Call(Box::new(value), parse_call(suffix)?)),
+                Rule::member => Ok(Expr::Member(
+                    Box::new(value),
+                    suffix
+                        .into_inner()
+                        .next()
+                        .expect("member name")
+                        .as_str()
+                        .to_owned(),
+                )),
+                _ => unreachable!("unexpected postfix"),
+            })
+        }
+        Rule::grouped => parse_expr(pair.into_inner().next().expect("grouped expression")),
+        Rule::identifier => Ok(Expr::Identifier(pair.as_str().to_owned())),
+        Rule::null => Ok(Expr::Null),
+        Rule::boolean => Ok(Expr::Bool(pair.as_str() == "true")),
+        Rule::number => Ok(Expr::Number(
+            pair.as_str()
+                .parse()
+                .map_err(|_| Error::Parse("invalid number".into()))?,
+        )),
+        Rule::string => Ok(Expr::String(
+            serde_json::from_str(pair.as_str()).map_err(|error| Error::Parse(error.to_string()))?,
+        )),
+        Rule::array => pair
+            .into_inner()
+            .map(parse_expr)
+            .collect::<Result<_>>()
+            .map(Expr::Array),
+        Rule::object => pair
+            .into_inner()
+            .map(|entry| {
+                let mut inner = entry.into_inner();
+                let key = serde_json::from_str(inner.next().expect("object key").as_str())
+                    .map_err(|error| Error::Parse(error.to_string()))?;
+                Ok((key, parse_expr(inner.next().expect("object value"))?))
+            })
+            .collect::<Result<_>>()
+            .map(Expr::Object),
+        Rule::function => {
+            let mut inner: Vec<_> = pair.into_inner().collect();
+            let body = parse_expr(inner.pop().expect("function body"))?;
+            let parameters = if inner.is_empty() {
+                vec![]
+            } else {
+                parse_parameters(inner.pop().expect("parameters"))?
+            };
+            Ok(Expr::Function(parameters, Box::new(body)))
+        }
+        Rule::if_expression => {
+            let mut inner = pair.into_inner();
+            Ok(Expr::If(
+                Box::new(parse_expr(inner.next().expect("condition"))?),
+                Box::new(parse_expr(inner.next().expect("then"))?),
+                Box::new(parse_expr(inner.next().expect("else"))?),
+            ))
+        }
+        Rule::do_expression => {
+            let mut inner: Vec<_> = pair.into_inner().collect();
+            let result = parse_expr(inner.pop().expect("do result"))?;
+            let statements = inner
+                .into_iter()
+                .map(parse_statement)
+                .collect::<Result<_>>()?;
+            Ok(Expr::Do(statements, Box::new(result)))
+        }
+        _ => unreachable!("unexpected expression: {:?}", pair.as_rule()),
+    }
+}
+
+fn parse_call(pair: Pair<Rule>) -> Result<Vec<Argument>> {
+    let Some(arguments) = pair.into_inner().next() else {
+        return Ok(vec![]);
+    };
+    arguments
+        .into_inner()
+        .map(|argument| {
+            let inner = argument.into_inner().next().expect("argument");
+            if inner.as_rule() == Rule::named_argument {
+                let mut named = inner.into_inner();
+                Ok(Argument::Named(
+                    named.next().expect("argument name").as_str().to_owned(),
+                    parse_expr(named.next().expect("argument value"))?,
+                ))
+            } else {
+                Ok(Argument::Positional(parse_expr(inner)?))
+            }
+        })
+        .collect()
+}
+
+fn parse_parameters(pair: Pair<Rule>) -> Result<Vec<Parameter>> {
+    pair.into_inner()
+        .map(|parameter| {
+            let mut inner = parameter.into_inner();
+            Ok(Parameter {
+                name: inner.next().expect("parameter name").as_str().to_owned(),
+                default: inner.next().map(parse_expr).transpose()?,
+            })
+        })
+        .collect()
+}
+
+fn precedence(operator: &str) -> u8 {
+    match operator {
+        "||" => 1,
+        "&&" => 2,
+        "==" | "!=" => 3,
+        "<" | "<=" | ">" | ">=" => 4,
+        "+" | "-" => 5,
+        "*" | "/" | "%" => 6,
+        _ => unreachable!("operator"),
+    }
+}
+
+fn parse_binary(mut left: Expr, rest: &[(String, Expr)], index: &mut usize, minimum: u8) -> Expr {
+    while let Some((operator, mut right)) = rest.get(*index).cloned() {
+        let current = precedence(&operator);
+        if current < minimum {
+            break;
+        }
+        *index += 1;
+        while let Some((next_operator, _)) = rest.get(*index) {
+            let next = precedence(next_operator);
+            if next <= current {
+                break;
+            }
+            right = parse_binary(right, rest, index, next);
+        }
+        left = Expr::Binary(Box::new(left), operator, Box::new(right));
+    }
+    left
+}

@@ -1,0 +1,4 @@
+let db = sqlite_open(":memory:");
+sqlite_execute(db, "create table notes (id integer, body text)");
+sqlite_execute(db, "insert into notes values (?, ?)", [1, "hello"]);
+sqlite_query(db, "select * from notes");

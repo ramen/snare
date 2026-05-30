@@ -1,0 +1,45 @@
+program = { SOI ~ statement* ~ EOI }
+statement = _{ let_statement | expression_statement }
+let_statement = { "let" ~ identifier ~ "=" ~ expression ~ ";" }
+expression_statement = { expression ~ ";"? }
+
+expression = { prefix ~ (infix ~ prefix)* }
+prefix = { unary* ~ postfix }
+unary = { "-" | "!" }
+infix = _{ or | and | equality | comparison | addition | multiplication }
+or = { "||" }
+and = { "&&" }
+equality = { "==" | "!=" }
+comparison = { "<=" | ">=" | "<" | ">" }
+addition = { "+" | "-" }
+multiplication = { "*" | "/" | "%" }
+
+postfix = { primary ~ (call | member)* }
+call = { "(" ~ argument_list? ~ ")" }
+argument_list = { argument ~ ("," ~ argument)* ~ ","? }
+argument = { named_argument | expression }
+named_argument = { identifier ~ "=" ~ expression }
+member = { "." ~ identifier }
+
+primary = _{ function | if_expression | do_expression | array | object | string | number | boolean | null | identifier | grouped }
+grouped = { "(" ~ expression ~ ")" }
+function = { "fn" ~ "(" ~ parameter_list? ~ ")" ~ "=>" ~ expression }
+parameter_list = { parameter ~ ("," ~ parameter)* ~ ","? }
+parameter = { identifier ~ ("=" ~ expression)? }
+if_expression = { "if" ~ expression ~ "then" ~ expression ~ "else" ~ expression }
+do_expression = { "do" ~ "{" ~ let_statement* ~ expression ~ "}" }
+
+array = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
+object = { "{" ~ (object_entry ~ ("," ~ object_entry)* ~ ","?)? ~ "}" }
+object_entry = { string ~ ":" ~ expression }
+string = @{ "\"" ~ ("\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" | unicode_escape | !("\"" | "\\") ~ ANY)* ~ "\"" }
+unicode_escape = { "\\u" ~ ASCII_HEX_DIGIT{4} }
+number = @{ "-"? ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) ~ ("." ~ ASCII_DIGIT+)? ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
+boolean = { "true" | "false" }
+null = { "null" }
+
+identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+keyword = { ("let" | "fn" | "if" | "then" | "else" | "do" | "true" | "false" | "null") ~ !(ASCII_ALPHANUMERIC | "_") }
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }
