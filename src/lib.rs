@@ -234,6 +234,14 @@ impl Engine {
         self.environment.set(name, value);
     }
 
+    pub fn get(&self, name: &str) -> Option<Value> {
+        self.environment.get(name)
+    }
+
+    pub fn globals(&self) -> ValueMap {
+        self.environment.globals()
+    }
+
     pub fn register_fn(
         &mut self,
         name: impl Into<String>,

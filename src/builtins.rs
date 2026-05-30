@@ -10,6 +10,14 @@ use crate::{Error, Module, Result, parser};
 
 pub fn install(environment: &Environment) {
     environment.set("print", Value::native(print));
+    environment.set("not", Value::native(not));
+    environment.set("abs", Value::native(abs));
+    environment.set("sum", Value::native(sum));
+    environment.set("product", Value::native(product));
+    environment.set("min", Value::native(min));
+    environment.set("max", Value::native(max));
+    environment.set("any", Value::native(any));
+    environment.set("all", Value::native(all));
     environment.set("len", Value::native(len));
     environment.set("keys", Value::native(keys));
     environment.set("values", Value::native(values));
@@ -68,6 +76,57 @@ fn print(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     expect_len(&positional, 1)?;
     println!("{}", positional[0]);
     Ok(Value::Null)
+}
+
+fn not(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    Ok(Value::Bool(!positional[0].truthy()))
+}
+
+fn abs(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    match &positional[0] {
+        Value::Number(value) if value.is_i64() => value
+            .as_i64()
+            .expect("i64")
+            .checked_abs()
+            .map(|value| Value::Number(value.into()))
+            .ok_or_else(|| Error::Type("abs overflowed".into())),
+        Value::Number(value) => json_number(value.as_f64().expect("f64").abs()),
+        _ => Err(Error::Type("abs expects a number".into())),
+    }
+}
+
+fn sum(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    numeric_fold(positional, named, "sum", 0.0, |total, value| total + value)
+}
+
+fn product(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    numeric_fold(positional, named, "product", 1.0, |total, value| {
+        total * value
+    })
+}
+
+fn min(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    extremum(positional, named, "min", Ordering::Less)
+}
+
+fn max(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    extremum(positional, named, "max", Ordering::Greater)
+}
+
+fn any(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    truthy_array(positional, named, "any", |values| {
+        values.iter().any(Value::truthy)
+    })
+}
+
+fn all(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    truthy_array(positional, named, "all", |values| {
+        values.iter().all(Value::truthy)
+    })
 }
 
 fn len(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
@@ -331,6 +390,60 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering> {
     }
 }
 
+fn numeric_fold(
+    positional: Vec<Value>,
+    named: NamedArguments,
+    name: &str,
+    initial: f64,
+    operation: impl Fn(f64, f64) -> f64,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type(format!("{name} expects an array")));
+    };
+    values
+        .iter()
+        .try_fold(initial, |total, value| Ok(operation(total, number(value)?)))
+        .and_then(json_number)
+}
+
+fn extremum(
+    positional: Vec<Value>,
+    named: NamedArguments,
+    name: &str,
+    ordering: Ordering,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type(format!("{name} expects an array")));
+    };
+    let Some(mut result) = values.first().cloned() else {
+        return Ok(Value::Null);
+    };
+    for value in &values[1..] {
+        if compare(value, &result)? == ordering {
+            result = value.clone();
+        }
+    }
+    Ok(result)
+}
+
+fn truthy_array(
+    positional: Vec<Value>,
+    named: NamedArguments,
+    name: &str,
+    predicate: impl FnOnce(&[Value]) -> bool,
+) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type(format!("{name} expects an array")));
+    };
+    Ok(Value::Bool(predicate(values)))
+}
+
 fn range(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     let (mut current, stop, step) = match positional.as_slice() {
@@ -485,6 +598,24 @@ fn integer(value: &Value) -> Result<i64> {
     value
         .as_i64()
         .ok_or_else(|| Error::Type("expected an integer".into()))
+}
+
+fn number(value: &Value) -> Result<f64> {
+    let Value::Number(value) = value else {
+        return Err(Error::Type("expected a number".into()));
+    };
+    value
+        .as_f64()
+        .ok_or_else(|| Error::Type("invalid number".into()))
+}
+
+fn json_number(value: f64) -> Result<Value> {
+    if value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
+        return Ok(Value::Number((value as i64).into()));
+    }
+    serde_json::Number::from_f64(value)
+        .map(Value::Number)
+        .ok_or_else(|| Error::Type("number is not representable as JSON".into()))
 }
 
 fn slice_range(len: usize, start: i64, stop: Option<&Value>) -> Result<std::ops::Range<usize>> {

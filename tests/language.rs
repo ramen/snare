@@ -125,6 +125,15 @@ fn host_functions_can_capture_state_and_receive_named_arguments() {
 }
 
 #[test]
+fn host_applications_can_read_script_defined_globals() {
+    let mut engine = Engine::new();
+    engine.eval(r#"let answer = {"value": 42};"#).unwrap();
+
+    assert_eq!(engine.get("answer").unwrap().to_string(), r#"{"value":42}"#);
+    assert!(engine.globals().contains_key("sqlite"));
+}
+
+#[test]
 fn modules_namespace_host_values_and_functions() {
     let mut module = Module::new();
     module
@@ -200,6 +209,19 @@ fn range_generates_integer_arrays() {
     assert_eq!(eval("range(4)"), "[0,1,2,3]");
     assert_eq!(eval("range(2, 5)"), "[2,3,4]");
     assert_eq!(eval("range(5, 0, -2)"), "[5,3,1]");
+}
+
+#[test]
+fn numeric_and_boolean_helpers_cover_common_repl_tasks() {
+    assert_eq!(eval("not(0)"), "true");
+    assert_eq!(eval("abs(-3)"), "3");
+    assert_eq!(eval("sum([1, 2, 3])"), "6");
+    assert_eq!(eval("product([2, 3, 4])"), "24");
+    assert_eq!(eval("min([3, 1, 2])"), "1");
+    assert_eq!(eval("max([3, 1, 2])"), "3");
+    assert_eq!(eval("min([])"), "null");
+    assert_eq!(eval("any([null, 0, \"yes\"])"), "true");
+    assert_eq!(eval("all([1, true, \"yes\"])"), "true");
 }
 
 #[test]

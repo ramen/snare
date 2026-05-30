@@ -54,6 +54,12 @@ remove({"a": 1, "b": 2}, "a")                  // {"b": 2}
 merge({"a": 1}, {"b": 2})                      // {"a": 1, "b": 2}
 contains([1, 2, 3], 2)                         // true
 sort([3, 1, 2])                                // [1, 2, 3]
+sum([1, 2, 3])                                 // 6
+product([2, 3, 4])                             // 24
+min([3, 1, 2])                                 // 1
+max([3, 1, 2])                                 // 3
+any([null, 0, "yes"])                          // true
+all([1, true, "yes"])                          // true
 map([1, 2, 3], fn(value) => value * 2)         // [2, 4, 6]
 filter([1, 2, 3, 4], fn(value) => value > 2)   // [3, 4]
 range(1, 6, 2)                                 // [1, 3, 5]
@@ -100,6 +106,14 @@ sqlite.query(db, "select payload from files");
 let mut engine = snare::Engine::new();
 let value = engine.eval(r#"{"answer": 6 * 7}"#)?;
 println!("{value}");
+```
+
+Host applications can read values defined by scripts:
+
+```rust
+engine.eval(r#"let answer = {"value": 42};"#)?;
+let answer = engine.get("answer").expect("answer");
+let globals = engine.globals();
 ```
 
 Host applications can register Rust closures as Snare functions. The callback
