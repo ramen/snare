@@ -6,14 +6,25 @@ use tokio::runtime::Runtime;
 
 use crate::eval::Environment;
 use crate::value::Value;
-use crate::{Error, Result};
+use crate::{Error, Module, Result};
 
 pub fn install(environment: &Environment) {
-    environment.set("print", Value::Native(print));
-    environment.set("len", Value::Native(len));
-    environment.set("sqlite_open", Value::Native(sqlite_open));
-    environment.set("sqlite_query", Value::Native(sqlite_query));
-    environment.set("sqlite_execute", Value::Native(sqlite_execute));
+    environment.set("print", Value::native(print));
+    environment.set("len", Value::native(len));
+
+    let open = Value::native(sqlite_open);
+    let query = Value::native(sqlite_query);
+    let execute = Value::native(sqlite_execute);
+    let mut sqlite = Module::new();
+    sqlite
+        .set("open", open.clone())
+        .set("query", query.clone())
+        .set("execute", execute.clone());
+    environment.set("sqlite", sqlite.into());
+
+    environment.set("sqlite_open", open);
+    environment.set("sqlite_query", query);
+    environment.set("sqlite_execute", execute);
 }
 
 fn runtime() -> &'static Runtime {
@@ -105,11 +116,18 @@ fn bind_parameters<'query>(
             Value::Bool(value) => query.bind(*value),
             Value::Number(value) if value.is_i64() => query.bind(value.as_i64().expect("i64")),
             Value::Number(value) if value.is_u64() => {
-                query.bind(value.as_u64().expect("u64") as i64)
+                query.bind(i64::try_from(value.as_u64().expect("u64")).map_err(|_| {
+                    Error::Type("SQLite integers must fit in a signed 64-bit value".into())
+                })?)
             }
             Value::Number(value) => query.bind(value.as_f64().expect("f64")),
             Value::String(value) => query.bind(value),
-            _ => return Err(Error::Type("SQLite parameters must be JSON scalars".into())),
+            Value::Array(value) => query.bind(byte_array(value)?),
+            _ => {
+                return Err(Error::Type(
+                    "SQLite parameters must be JSON scalars or byte arrays".into(),
+                ));
+            }
         }
     }
     Ok(query)
@@ -134,23 +152,43 @@ fn row_to_value(row: &sqlx::sqlite::SqliteRow) -> Result<Value> {
         let value = if raw.is_null() {
             Value::Null
         } else {
-            match column.type_info().name() {
+            match raw.type_info().name() {
                 "INTEGER" => Value::Number(row.try_get::<i64, _>(index)?.into()),
                 "REAL" => serde_json::Number::from_f64(row.try_get(index)?)
                     .map(Value::Number)
                     .ok_or_else(|| Error::Type("SQLite returned a non-JSON number".into()))?,
                 "TEXT" => Value::String(row.try_get(index)?),
-                "BLOB" => {
-                    return Err(Error::Type(
-                        "SQLite BLOB values are not supported yet".into(),
-                    ));
-                }
+                "BLOB" => Value::Array(
+                    row.try_get::<Vec<u8>, _>(index)?
+                        .into_iter()
+                        .map(|byte| Value::Number(byte.into()))
+                        .collect(),
+                ),
                 name => return Err(Error::Type(format!("unsupported SQLite type: {name}"))),
             }
         };
         object.insert(column.name().to_owned(), value);
     }
     Ok(Value::Object(object))
+}
+
+fn byte_array(values: &[Value]) -> Result<Vec<u8>> {
+    values
+        .iter()
+        .map(|value| {
+            let Value::Number(value) = value else {
+                return Err(Error::Type(
+                    "SQLite byte arrays must contain integers from 0 to 255".into(),
+                ));
+            };
+            value
+                .as_u64()
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or_else(|| {
+                    Error::Type("SQLite byte arrays must contain integers from 0 to 255".into())
+                })
+        })
+        .collect()
 }
 
 fn expect_len(positional: &[Value], expected: usize) -> Result<()> {

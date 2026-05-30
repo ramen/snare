@@ -8,7 +8,8 @@ use crate::ast::{Expr, Parameter};
 use crate::eval::Environment;
 use crate::{Error, Result};
 
-pub type NativeFunction = fn(Vec<Value>, BTreeMap<String, Value>) -> Result<Value>;
+pub type NamedArguments = BTreeMap<String, Value>;
+pub type NativeFunction = Rc<dyn Fn(Vec<Value>, NamedArguments) -> Result<Value>>;
 
 #[derive(Clone)]
 pub enum Value {
@@ -31,6 +32,12 @@ pub struct Function {
 }
 
 impl Value {
+    pub fn native(
+        function: impl Fn(Vec<Value>, NamedArguments) -> Result<Value> + 'static,
+    ) -> Self {
+        Self::Native(Rc::new(function))
+    }
+
     pub fn from_json(value: serde_json::Value) -> Self {
         match value {
             serde_json::Value::Null => Self::Null,

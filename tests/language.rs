@@ -1,4 +1,7 @@
-use snare::{Engine, is_incomplete};
+use std::cell::Cell;
+use std::rc::Rc;
+
+use snare::{Engine, Module, Value, is_incomplete};
 
 fn eval(source: &str) -> String {
     Engine::new().eval(source).unwrap().to_string()
@@ -67,5 +70,91 @@ fn sqlite_can_be_explored_from_the_language() {
             .unwrap()
             .to_string(),
         r#"[{"body":"hello","id":1}]"#
+    );
+}
+
+#[test]
+fn sqlite_supports_runtime_types_and_json_byte_arrays() {
+    let mut engine = Engine::new();
+    engine.eval(r#"let db = sqlite_open(":memory:");"#).unwrap();
+    assert_eq!(
+        engine
+            .eval(r#"sqlite_query(db, "select ? as value", ["hello"])"#)
+            .unwrap()
+            .to_string(),
+        r#"[{"value":"hello"}]"#
+    );
+    engine
+        .eval(r#"sqlite_execute(db, "create table files (payload blob)");"#)
+        .unwrap();
+    engine
+        .eval(r#"sqlite_execute(db, "insert into files values (?)", [[0, 127, 255]]);"#)
+        .unwrap();
+    assert_eq!(
+        engine
+            .eval(r#"sqlite_query(db, "select payload from files")"#)
+            .unwrap()
+            .to_string(),
+        r#"[{"payload":[0,127,255]}]"#
+    );
+}
+
+#[test]
+fn host_functions_can_capture_state_and_receive_named_arguments() {
+    let calls = Rc::new(Cell::new(0));
+    let host_calls = calls.clone();
+    let mut engine = Engine::new();
+    engine.register_fn("greet", move |positional, mut named| {
+        host_calls.set(host_calls.get() + 1);
+        let name = named.remove("name").unwrap();
+        assert!(positional.is_empty());
+        assert!(named.is_empty());
+        let Value::String(name) = name else {
+            panic!("name should be a string");
+        };
+        Ok(Value::String(format!("hello, {name}")))
+    });
+
+    assert_eq!(
+        engine.eval(r#"greet(name = "Snare")"#).unwrap().to_string(),
+        r#""hello, Snare""#
+    );
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn modules_namespace_host_values_and_functions() {
+    let mut module = Module::new();
+    module
+        .set("answer", Value::Number(42.into()))
+        .register_fn("double", |positional, named| {
+            assert!(named.is_empty());
+            let [Value::Number(value)] = positional.as_slice() else {
+                panic!("expected one number");
+            };
+            Ok(Value::Number((value.as_i64().unwrap() * 2).into()))
+        });
+    let mut engine = Engine::new();
+    engine.register_module("host", module);
+
+    assert_eq!(
+        engine
+            .eval("host.answer + host.double(4)")
+            .unwrap()
+            .to_string(),
+        "50"
+    );
+}
+
+#[test]
+fn sqlite_is_available_as_a_module() {
+    let mut engine = Engine::new();
+    engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
+    assert_eq!(
+        engine
+            .eval(r#"sqlite.query(db, "select 42 as answer")"#)
+            .unwrap()
+            .to_string(),
+        r#"[{"answer":42}]"#
     );
 }

@@ -44,10 +44,20 @@ do { let x = 2; x * 3 }
 SQLite is intentionally present in the first milestone:
 
 ```snare
-let db = sqlite_open("notes.db");
-sqlite_execute(db, "create table if not exists notes (body text)");
-sqlite_execute(db, "insert into notes values (?)", ["hello"]);
-sqlite_query(db, "select rowid, body from notes");
+let db = sqlite.open("notes.db");
+sqlite.execute(db, "create table if not exists notes (body text)");
+sqlite.execute(db, "insert into notes values (?)", ["hello"]);
+sqlite.query(db, "select rowid, body from notes");
+```
+
+SQLite `NULL`, integer, real, text, and BLOB values map to JSON-shaped Snare
+values. BLOBs use byte arrays, so they can be inspected and passed back to
+SQLite without adding a non-JSON literal type:
+
+```snare
+sqlite.execute(db, "insert into files values (?)", [[0, 127, 255]]);
+sqlite.query(db, "select payload from files");
+// [{"payload": [0, 127, 255]}]
 ```
 
 ## Embed it
@@ -58,6 +68,35 @@ let value = engine.eval(r#"{"answer": 6 * 7}"#)?;
 println!("{value}");
 ```
 
+Host applications can register Rust closures as Snare functions. The callback
+receives positional and named arguments separately and may capture application
+state:
+
+```rust
+engine.register_fn("greet", |_positional, mut named| {
+    let name = named.remove("name").expect("name");
+    let snare::Value::String(name) = name else {
+        return Err(snare::Error::Type("name must be a string".into()));
+    };
+    Ok(snare::Value::String(format!("Hello, {name}!")))
+});
+
+engine.eval(r#"greet(name = "world")"#)?;
+```
+
+Host applications can also expose namespaced modules:
+
+```rust
+let mut app = snare::Module::new();
+app.set("version", snare::Value::String("1.0".into()));
+app.register_fn("greet", |_positional, _named| {
+    Ok(snare::Value::String("Hello!".into()))
+});
+engine.register_module("app", app);
+
+engine.eval("app.greet()")?;
+```
+
 The current implementation is a deliberately small kernel. Useful next
-language work includes first-class host function registration, richer SQLite
-values, and a module system.
+language work includes file-backed modules, richer collection operations, and
+improved diagnostics.

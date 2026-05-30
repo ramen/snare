@@ -1,13 +1,15 @@
 mod ast;
 mod builtins;
 mod eval;
+mod module;
 mod parser;
 mod value;
 
 use std::fmt;
 
+pub use module::Module;
 pub use parser::is_incomplete;
-pub use value::Value;
+pub use value::{NamedArguments, Value};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -63,5 +65,17 @@ impl Engine {
 
     pub fn set(&mut self, name: impl Into<String>, value: Value) {
         self.environment.set(name, value);
+    }
+
+    pub fn register_fn(
+        &mut self,
+        name: impl Into<String>,
+        function: impl Fn(Vec<Value>, NamedArguments) -> Result<Value> + 'static,
+    ) {
+        self.set(name, Value::native(function));
+    }
+
+    pub fn register_module(&mut self, name: impl Into<String>, module: Module) {
+        self.set(name, module.into());
     }
 }
