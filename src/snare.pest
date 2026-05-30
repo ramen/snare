@@ -1,6 +1,7 @@
 program = { SOI ~ statement* ~ EOI }
-statement = _{ let_statement | expression_statement }
+statement = _{ let_statement | assignment_statement | expression_statement }
 let_statement = { "let" ~ identifier ~ "=" ~ expression ~ ";" }
+assignment_statement = { identifier ~ "=" ~ expression ~ ";" }
 expression_statement = { expression ~ ";"? }
 
 expression = { prefix ~ (infix ~ prefix)* }
@@ -27,7 +28,7 @@ function = { "fn" ~ "(" ~ parameter_list? ~ ")" ~ "=>" ~ expression }
 parameter_list = { parameter ~ ("," ~ parameter)* ~ ","? }
 parameter = { identifier ~ ("=" ~ expression)? }
 if_expression = { "if" ~ expression ~ "then" ~ expression ~ "else" ~ expression }
-do_expression = { "do" ~ "{" ~ let_statement* ~ expression ~ "}" }
+do_expression = { "do" ~ "{" ~ (let_statement | assignment_statement)* ~ expression ~ "}" }
 
 array = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
 object = { "{" ~ (object_entry ~ ("," ~ object_entry)* ~ ","?)? ~ "}" }

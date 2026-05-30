@@ -1,6 +1,7 @@
 #[derive(Clone, Debug)]
 pub enum Statement {
     Let(String, Expr),
+    Assign(String, Expr),
     Expr(Expr),
 }
 

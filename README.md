@@ -34,6 +34,9 @@ true
 let double = fn(value) => value * 2;
 double(21)
 
+let count = 1;
+count = count + 1;
+
 if len([1, 2]) > 0 then "yes" else "no"
 do { let x = 2; x * 3 }
 ```
@@ -56,5 +59,5 @@ println!("{value}");
 ```
 
 The current implementation is a deliberately small kernel. Useful next
-language work includes assignment, multiline REPL input, first-class host
-function registration, richer SQLite values, and a module system.
+language work includes first-class host function registration, richer SQLite
+values, and a module system.

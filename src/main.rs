@@ -1,10 +1,153 @@
+use std::borrow::Cow;
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 
-use rustyline::DefaultEditor;
+use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
-use snare::Engine;
+use rustyline::highlight::{CmdKind, Highlighter};
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+use rustyline::validate::Validator;
+use rustyline::{Editor, Helper};
+use snare::{Engine, is_incomplete};
+
+const RESET: &str = "\x1b[0m";
+const PROMPT: &str = "\x1b[1;32m";
+const KEYWORD: &str = "\x1b[1;34m";
+const STRING: &str = "\x1b[33m";
+const NUMBER: &str = "\x1b[36m";
+const LITERAL: &str = "\x1b[35m";
+const COMMENT: &str = "\x1b[2m";
+
+struct ReplHelper;
+
+impl Helper for ReplHelper {}
+
+impl Completer for ReplHelper {
+    type Candidate = String;
+}
+
+impl Hinter for ReplHelper {
+    type Hint = String;
+}
+
+impl Validator for ReplHelper {}
+
+impl Highlighter for ReplHelper {
+    fn highlight<'line>(&self, line: &'line str, _position: usize) -> Cow<'line, str> {
+        Cow::Owned(highlight(line))
+    }
+
+    fn highlight_prompt<'borrow, 'self_ref: 'borrow, 'prompt: 'borrow>(
+        &'self_ref self,
+        prompt: &'prompt str,
+        _default: bool,
+    ) -> Cow<'borrow, str> {
+        Cow::Owned(format!("{PROMPT}{prompt}{RESET}"))
+    }
+
+    fn highlight_char(&self, _line: &str, _position: usize, kind: CmdKind) -> bool {
+        kind != CmdKind::ForcedRefresh
+    }
+}
+
+fn highlight(line: &str) -> String {
+    let mut highlighted = String::with_capacity(line.len());
+    let mut index = 0;
+    while index < line.len() {
+        let rest = &line[index..];
+        if rest.starts_with("//") {
+            push_colored(&mut highlighted, COMMENT, rest);
+            break;
+        }
+        let byte = line.as_bytes()[index];
+        if byte == b'"' {
+            let end = string_end(line, index);
+            push_colored(&mut highlighted, STRING, &line[index..end]);
+            index = end;
+        } else if byte.is_ascii_digit()
+            || (byte == b'-'
+                && line
+                    .as_bytes()
+                    .get(index + 1)
+                    .is_some_and(u8::is_ascii_digit))
+        {
+            let end = number_end(line, index);
+            push_colored(&mut highlighted, NUMBER, &line[index..end]);
+            index = end;
+        } else if byte.is_ascii_alphabetic() || byte == b'_' {
+            let end = identifier_end(line, index);
+            let identifier = &line[index..end];
+            match identifier {
+                "let" | "fn" | "if" | "then" | "else" | "do" => {
+                    push_colored(&mut highlighted, KEYWORD, identifier);
+                }
+                "true" | "false" | "null" => push_colored(&mut highlighted, LITERAL, identifier),
+                _ => highlighted.push_str(identifier),
+            }
+            index = end;
+        } else {
+            let character = rest.chars().next().expect("character");
+            highlighted.push(character);
+            index += character.len_utf8();
+        }
+    }
+    highlighted
+}
+
+fn string_end(line: &str, start: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut index = start + 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'"' => return index + 1,
+            _ => index += 1,
+        }
+    }
+    bytes.len()
+}
+
+fn number_end(line: &str, start: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut index = start;
+    if bytes[index] == b'-' {
+        index += 1;
+    }
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+            index += 1;
+        }
+    }
+    index
+}
+
+fn identifier_end(line: &str, start: usize) -> usize {
+    line.as_bytes()[start..]
+        .iter()
+        .position(|byte| !(byte.is_ascii_alphanumeric() || *byte == b'_'))
+        .map_or(line.len(), |offset| start + offset)
+}
+
+fn push_colored(output: &mut String, color: &str, text: &str) {
+    output.push_str(color);
+    output.push_str(text);
+    output.push_str(RESET);
+}
 
 fn main() {
     if let Err(error) = run() {
@@ -36,12 +179,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     println!("Snare 0.1.0");
-    let mut editor = DefaultEditor::new()?;
+    let mut editor = Editor::<ReplHelper, DefaultHistory>::new()?;
+    editor.set_helper(Some(ReplHelper));
     loop {
         match editor.readline("snare> ") {
-            Ok(line) => {
-                let _ = editor.add_history_entry(&line);
-                match engine.eval(&line) {
+            Ok(mut source) => {
+                while is_incomplete(&source) {
+                    match editor.readline("   ... ") {
+                        Ok(line) => {
+                            source.push('\n');
+                            source.push_str(&line);
+                        }
+                        Err(ReadlineError::Interrupted) => {
+                            source.clear();
+                            break;
+                        }
+                        Err(ReadlineError::Eof) => break,
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                if source.is_empty() {
+                    continue;
+                }
+                let _ = editor.add_history_entry(&source);
+                match engine.eval(&source) {
                     Ok(value) => println!("{value}"),
                     Err(error) => eprintln!("{error}"),
                 }
@@ -52,4 +213,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{COMMENT, KEYWORD, LITERAL, NUMBER, RESET, STRING, highlight};
+
+    #[test]
+    fn highlights_repl_tokens() {
+        assert_eq!(
+            highlight(r#"let value = {"ok": true, "count": 1+2} // comment"#),
+            format!(
+                "{KEYWORD}let{RESET} value = {{{STRING}\"ok\"{RESET}: {LITERAL}true{RESET}, {STRING}\"count\"{RESET}: {NUMBER}1{RESET}+{NUMBER}2{RESET}}} {COMMENT}// comment{RESET}"
+            )
+        );
+    }
+
+    #[test]
+    fn highlights_exponents_and_unicode_strings() {
+        assert_eq!(
+            highlight(r#""cafe \u2615" + -1.5e+2"#),
+            format!("{STRING}\"cafe \\u2615\"{RESET} + {NUMBER}-1.5e+2{RESET}")
+        );
+    }
 }

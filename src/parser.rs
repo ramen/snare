@@ -1,4 +1,5 @@
 use pest::Parser;
+use pest::error::InputLocation;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
@@ -21,6 +22,15 @@ pub fn parse(source: &str) -> Result<Vec<Statement>> {
         .collect()
 }
 
+pub fn is_incomplete(source: &str) -> bool {
+    SnareParser::parse(Rule::program, source)
+        .err()
+        .is_some_and(|error| match error.location {
+            InputLocation::Pos(position) => position == source.len(),
+            InputLocation::Span((_, end)) => end == source.len(),
+        })
+}
+
 fn parse_statement(pair: Pair<Rule>) -> Result<Statement> {
     match pair.as_rule() {
         Rule::let_statement => {
@@ -29,6 +39,14 @@ fn parse_statement(pair: Pair<Rule>) -> Result<Statement> {
             Ok(Statement::Let(
                 name,
                 parse_expr(inner.next().expect("let value"))?,
+            ))
+        }
+        Rule::assignment_statement => {
+            let mut inner = pair.into_inner();
+            let name = inner.next().expect("assignment name").as_str().to_owned();
+            Ok(Statement::Assign(
+                name,
+                parse_expr(inner.next().expect("assignment value"))?,
             ))
         }
         Rule::expression_statement => Ok(Statement::Expr(parse_expr(

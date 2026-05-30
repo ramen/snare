@@ -6,6 +6,7 @@ mod value;
 
 use std::fmt;
 
+pub use parser::is_incomplete;
 pub use value::Value;
 
 pub type Result<T> = std::result::Result<T, Error>;

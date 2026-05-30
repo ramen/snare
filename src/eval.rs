@@ -27,6 +27,20 @@ impl Environment {
         self.0.borrow_mut().values.insert(name.into(), value);
     }
 
+    pub fn assign(&self, name: &str, value: Value) -> Result<()> {
+        let parent = {
+            let mut scope = self.0.borrow_mut();
+            if scope.values.contains_key(name) {
+                scope.values.insert(name.to_owned(), value);
+                return Ok(());
+            }
+            scope.parent.clone()
+        };
+        parent
+            .ok_or_else(|| Error::Name(format!("unknown name: {name}")))?
+            .assign(name, value)
+    }
+
     pub fn get(&self, name: &str) -> Option<Value> {
         let scope = self.0.borrow();
         scope
@@ -44,6 +58,11 @@ pub fn eval_statements(statements: &[Statement], environment: &Environment) -> R
             Statement::Let(name, expr) => {
                 let value = eval(expr, environment)?;
                 environment.set(name, value);
+                Value::Null
+            }
+            Statement::Assign(name, expr) => {
+                let value = eval(expr, environment)?;
+                environment.assign(name, value)?;
                 Value::Null
             }
             Statement::Expr(expr) => eval(expr, environment)?,
