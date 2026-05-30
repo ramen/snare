@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::OnceLock;
 
 use sqlx::{Column, Row, TypeInfo, ValueRef};
@@ -15,12 +16,17 @@ pub fn install(environment: &Environment) {
     environment.set("pairs", Value::native(pairs));
     environment.set("get", Value::native(get));
     environment.set("has", Value::native(has));
+    environment.set("set", Value::native(set));
+    environment.set("remove", Value::native(remove));
+    environment.set("merge", Value::native(merge));
+    environment.set("contains", Value::native(contains));
     environment.set("push", Value::native(push));
     environment.set("first", Value::native(first));
     environment.set("rest", Value::native(rest));
     environment.set("slice", Value::native(slice));
     environment.set("map", Value::native(map));
     environment.set("filter", Value::native(filter));
+    environment.set("sort", Value::native(sort));
     environment.set("range", Value::native(range));
     environment.set("reduce", Value::native(reduce));
     environment.set("join", Value::native(join));
@@ -145,6 +151,58 @@ fn has(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     }
 }
 
+fn set(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 3)?;
+    let [Value::Object(values), Value::String(key), value] = positional.as_slice() else {
+        return Err(Error::Type(
+            "set expects an object, string key, and value".into(),
+        ));
+    };
+    let mut result = values.clone();
+    result.insert(key.clone(), value.clone());
+    Ok(Value::Object(result))
+}
+
+fn remove(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let [Value::Object(values), Value::String(key)] = positional.as_slice() else {
+        return Err(Error::Type(
+            "remove expects an object and string key".into(),
+        ));
+    };
+    let mut result = values.clone();
+    result.remove(key);
+    Ok(Value::Object(result))
+}
+
+fn merge(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let [Value::Object(left), Value::Object(right)] = positional.as_slice() else {
+        return Err(Error::Type("merge expects two objects".into()));
+    };
+    let mut result = left.clone();
+    result.extend(right.clone());
+    Ok(Value::Object(result))
+}
+
+fn contains(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let result = match (&positional[0], &positional[1]) {
+        (Value::Array(values), expected) => values.iter().any(|value| value.equal(expected)),
+        (Value::String(value), Value::String(expected)) => value.contains(expected),
+        _ => {
+            return Err(Error::Type(
+                "contains expects an array and value, or two strings".into(),
+            ));
+        }
+    };
+    Ok(Value::Bool(result))
+}
+
 fn push(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
@@ -230,6 +288,47 @@ fn filter(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
         }
     }
     Ok(Value::Array(result))
+}
+
+fn sort(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Array(values) = &positional[0] else {
+        return Err(Error::Type("sort expects an array".into()));
+    };
+    let mut values = values.clone();
+    let mut error = None;
+    values.sort_by(|left, right| {
+        if error.is_some() {
+            return Ordering::Equal;
+        }
+        match compare(left, right) {
+            Ok(ordering) => ordering,
+            Err(compare_error) => {
+                error = Some(compare_error);
+                Ordering::Equal
+            }
+        }
+    });
+    if let Some(error) = error {
+        return Err(error);
+    }
+    Ok(Value::Array(values))
+}
+
+fn compare(left: &Value, right: &Value) -> Result<Ordering> {
+    match (left, right) {
+        (Value::Null, Value::Null) => Ok(Ordering::Equal),
+        (Value::Bool(left), Value::Bool(right)) => Ok(left.cmp(right)),
+        (Value::Number(left), Value::Number(right)) => left
+            .as_f64()
+            .and_then(|left| right.as_f64().and_then(|right| left.partial_cmp(&right)))
+            .ok_or_else(|| Error::Type("cannot compare invalid numbers".into())),
+        (Value::String(left), Value::String(right)) => Ok(left.cmp(right)),
+        _ => Err(Error::Type(
+            "sort expects scalar values of a consistent type".into(),
+        )),
+    }
 }
 
 fn range(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {

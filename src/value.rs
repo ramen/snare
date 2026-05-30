@@ -90,6 +90,29 @@ impl Value {
             Self::Function(_) | Self::Native(_) | Self::Database(_) => true,
         }
     }
+
+    pub fn equal(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::Number(left), Self::Number(right)) => left == right,
+            (Self::String(left), Self::String(right)) => left == right,
+            (Self::Array(left), Self::Array(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| left.equal(right))
+            }
+            (Self::Object(left), Self::Object(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .all(|(key, left)| right.get(key).is_some_and(|right| left.equal(right)))
+            }
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Value {

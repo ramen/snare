@@ -246,8 +246,8 @@ fn eval_unary(operator: &str, value: Value) -> Result<Value> {
 fn eval_binary(left: Value, operator: &str, right: Value) -> Result<Value> {
     match operator {
         "&&" | "||" => Ok(right),
-        "==" => Ok(Value::Bool(equal(&left, &right))),
-        "!=" => Ok(Value::Bool(!equal(&left, &right))),
+        "==" => Ok(Value::Bool(left.equal(&right))),
+        "!=" => Ok(Value::Bool(!left.equal(&right))),
         "+" => match (left, right) {
             (Value::String(left), Value::String(right)) => Ok(Value::String(left + &right)),
             (left, right) => json_number(number(left)? + number(right)?),
@@ -292,27 +292,4 @@ fn json_number(value: f64) -> Result<Value> {
     serde_json::Number::from_f64(value)
         .map(Value::Number)
         .ok_or_else(|| Error::Type("number is not representable as JSON".into()))
-}
-
-fn equal(left: &Value, right: &Value) -> bool {
-    match (left, right) {
-        (Value::Null, Value::Null) => true,
-        (Value::Bool(left), Value::Bool(right)) => left == right,
-        (Value::Number(left), Value::Number(right)) => left == right,
-        (Value::String(left), Value::String(right)) => left == right,
-        (Value::Array(left), Value::Array(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|(left, right)| equal(left, right))
-        }
-        (Value::Object(left), Value::Object(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .all(|(key, left)| right.get(key).is_some_and(|right| equal(left, right)))
-        }
-        _ => false,
-    }
 }

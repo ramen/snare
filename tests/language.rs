@@ -171,6 +171,15 @@ fn collection_helpers_work_with_json_values() {
     assert_eq!(eval("get([1, 2, 3], -1)"), "3");
     assert_eq!(eval(r#"has({"answer": 42}, "answer")"#), "true");
     assert_eq!(eval("push([1, 2], 3)"), "[1,2,3]");
+    assert_eq!(eval(r#"set({"a": 1}, "b", 2)"#), r#"{"a":1,"b":2}"#);
+    assert_eq!(eval(r#"remove({"a": 1, "b": 2}, "a")"#), r#"{"b":2}"#);
+    assert_eq!(
+        eval(r#"merge({"a": 1}, {"a": 2, "b": 3})"#),
+        r#"{"a":2,"b":3}"#
+    );
+    assert_eq!(eval(r#"contains([{"a": 1}], {"a": 1})"#), "true");
+    assert_eq!(eval(r#"contains("Snare language", "language")"#), "true");
+    assert_eq!(eval("sort([3, 1, 2])"), "[1,2,3]");
 }
 
 #[test]
