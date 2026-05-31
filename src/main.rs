@@ -169,11 +169,7 @@ fn with_trailing_semicolon(source: &str) -> String {
 fn repl_output(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
-        Value::Array(_) | Value::Object(_) => value
-            .to_json()
-            .ok()
-            .and_then(|value| serde_json::to_string_pretty(&value).ok())
-            .or_else(|| Some(value.to_string())),
+        Value::Array(_) | Value::Object(_) => Some(value.to_pretty_string()),
         value => Some(value.to_string()),
     }
 }
@@ -297,6 +293,21 @@ mod tests {
         assert_eq!(
             repl_output(&value),
             Some("{\n  \"items\": [\n    1,\n    {\n      \"ok\": true\n    }\n  ]\n}".into())
+        );
+    }
+
+    #[test]
+    fn repl_pretty_prints_objects_containing_functions() {
+        let value = Value::Object(
+            [
+                ("items".into(), Value::Array(vec![Value::Number(1.into())])),
+                ("native".into(), Value::native(|_, _| Ok(Value::Null))),
+            ]
+            .into(),
+        );
+        assert_eq!(
+            repl_output(&value),
+            Some("{\n  \"items\": [\n    1\n  ],\n  \"native\": <function>\n}".into())
         );
     }
 }

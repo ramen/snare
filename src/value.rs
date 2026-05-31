@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use sqlx::SqlitePool;
@@ -108,6 +109,51 @@ impl Value {
         match self {
             Self::String(value) => value.clone(),
             value => value.to_string(),
+        }
+    }
+
+    pub fn to_pretty_string(&self) -> String {
+        let mut output = String::new();
+        self.write_pretty(&mut output, 0)
+            .expect("writing to a string cannot fail");
+        output
+    }
+
+    fn write_pretty(&self, output: &mut String, indent: usize) -> fmt::Result {
+        match self {
+            Self::Array(values) if values.is_empty() => write!(output, "[]"),
+            Self::Array(values) => {
+                writeln!(output, "[")?;
+                for (index, value) in values.iter().enumerate() {
+                    write!(output, "{:width$}", "", width = indent + 2)?;
+                    value.write_pretty(output, indent + 2)?;
+                    if index + 1 < values.len() {
+                        write!(output, ",")?;
+                    }
+                    writeln!(output)?;
+                }
+                write!(output, "{:width$}]", "", width = indent)
+            }
+            Self::Object(values) if values.is_empty() => write!(output, "{{}}"),
+            Self::Object(values) => {
+                writeln!(output, "{{")?;
+                for (index, (key, value)) in values.iter().enumerate() {
+                    write!(
+                        output,
+                        "{:width$}{}: ",
+                        "",
+                        serde_json::to_string(key).expect("object key is JSON"),
+                        width = indent + 2
+                    )?;
+                    value.write_pretty(output, indent + 2)?;
+                    if index + 1 < values.len() {
+                        write!(output, ",")?;
+                    }
+                    writeln!(output)?;
+                }
+                write!(output, "{:width$}}}", "", width = indent)
+            }
+            value => write!(output, "{value}"),
         }
     }
 
