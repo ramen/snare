@@ -144,6 +144,9 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
                 .ok_or_else(|| Error::Name(format!("object has no member: {name}"))),
             _ => Err(Error::Type("member access expects an object".into())),
         },
+        ExprKind::Index(collection, index) => {
+            lookup_index(eval(collection, environment)?, eval(index, environment)?)
+        }
         ExprKind::Function(parameters, body) => Ok(Value::Function(Rc::new(Function {
             parameters: parameters.clone(),
             body: *body.clone(),
@@ -165,6 +168,33 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
             eval_statements(statements, &environment)?;
             eval(result, &environment)
         }
+    }
+}
+
+fn lookup_index(collection: Value, index: Value) -> Result<Value> {
+    match (collection, index) {
+        (Value::Array(values), Value::Number(index)) => values
+            .get(array_index(values.len(), &index)?)
+            .cloned()
+            .ok_or_else(|| Error::Name("array index out of bounds".into())),
+        (Value::Object(mut values), Value::String(key)) => values
+            .remove(&key)
+            .ok_or_else(|| Error::Name(format!("object has no member: {key}"))),
+        (Value::Array(_), _) => Err(Error::Type("array index must be an integer".into())),
+        (Value::Object(_), _) => Err(Error::Type("object index must be a string".into())),
+        _ => Err(Error::Type("indexing expects an array or object".into())),
+    }
+}
+
+fn array_index(len: usize, index: &serde_json::Number) -> Result<usize> {
+    let index = index
+        .as_i64()
+        .ok_or_else(|| Error::Type("array index must be an integer".into()))?;
+    if index < 0 {
+        len.checked_sub(index.unsigned_abs() as usize)
+            .ok_or_else(|| Error::Name("array index out of bounds".into()))
+    } else {
+        usize::try_from(index).map_err(|_| Error::Name("array index out of bounds".into()))
     }
 }
 

@@ -15,12 +15,13 @@ comparison = { "<=" | ">=" | "<" | ">" }
 addition = { "+" | "-" }
 multiplication = { "*" | "/" | "%" }
 
-postfix = { primary ~ (call | member)* }
+postfix = { primary ~ (call | member | index)* }
 call = { "(" ~ argument_list? ~ ")" }
 argument_list = { argument ~ ("," ~ argument)* ~ ","? }
 argument = { named_argument | expression }
 named_argument = { identifier ~ "=" ~ expression }
 member = { "." ~ identifier }
+index = { "[" ~ expression ~ "]" }
 
 primary = _{ function | if_expression | do_expression | array | object | string | number | boolean | null | identifier | grouped }
 grouped = { "(" ~ expression ~ ")" }

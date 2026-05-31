@@ -42,6 +42,7 @@ pub enum ExprKind {
     Binary(Box<Expr>, String, Box<Expr>),
     Call(Box<Expr>, Vec<Argument>),
     Member(Box<Expr>, String),
+    Index(Box<Expr>, Box<Expr>),
     Function(Vec<Parameter>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Do(Vec<Statement>, Box<Expr>),

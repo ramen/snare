@@ -49,6 +49,34 @@ fn assignment_does_not_implicitly_declare_names() {
 }
 
 #[test]
+fn arrays_and_objects_can_be_indexed() {
+    assert_eq!(eval("[1, 2, 3][1]"), "2");
+    assert_eq!(eval("[1, 2, 3][-1]"), "3");
+    assert_eq!(eval(r#"{"answer": 42}["answer"]"#), "42");
+}
+
+#[test]
+fn invalid_indices_are_errors() {
+    assert!(Engine::new().eval("[1][1]").is_err());
+    assert!(Engine::new().eval(r#"[1]["0"]"#).is_err());
+    assert!(Engine::new().eval(r#"{}[0]"#).is_err());
+}
+
+#[test]
+fn indexed_assignment_is_not_supported() {
+    assert!(
+        Engine::new()
+            .eval("let values = [1]; values[0] = 2;")
+            .is_err()
+    );
+    assert!(
+        Engine::new()
+            .eval(r#"let value = {}; value["answer"] = 42;"#)
+            .is_err()
+    );
+}
+
+#[test]
 fn incomplete_input_can_be_continued_by_the_repl() {
     assert!(is_incomplete("let value = {"));
     assert!(is_incomplete("1 +"));

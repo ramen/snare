@@ -119,6 +119,15 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
                     ),
                     span: pair_span,
                 }),
+                Rule::index => Ok(Expr {
+                    kind: ExprKind::Index(
+                        Box::new(value),
+                        Box::new(parse_expr(
+                            suffix.into_inner().next().expect("index expression"),
+                        )?),
+                    ),
+                    span: pair_span,
+                }),
                 _ => unreachable!("unexpected postfix"),
             })
         }

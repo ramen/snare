@@ -37,6 +37,10 @@ double(21)
 let count = 1;
 count = count + 1;
 
+let values = [1, 2, 3];
+values[1]                                     // 2
+{"answer": 42}["answer"]                      // 42
+
 if len([1, 2]) > 0 then "yes" else "no"
 do { let x = 2; x * 3 }
 ```
