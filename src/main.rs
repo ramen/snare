@@ -159,6 +159,11 @@ fn with_trailing_semicolon(source: &str) -> String {
 fn repl_output(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
+        Value::Array(_) | Value::Object(_) => value
+            .to_json()
+            .ok()
+            .and_then(|value| serde_json::to_string_pretty(&value).ok())
+            .or_else(|| Some(value.to_string())),
         value => Some(value.to_string()),
     }
 }
@@ -264,5 +269,16 @@ mod tests {
     fn repl_does_not_print_null_values() {
         assert_eq!(repl_output(&Value::Null), None);
         assert_eq!(repl_output(&Value::Number(42.into())), Some("42".into()));
+    }
+
+    #[test]
+    fn repl_pretty_prints_arrays_and_objects() {
+        let value = Value::from_json(serde_json::json!({
+            "items": [1, {"ok": true}]
+        }));
+        assert_eq!(
+            repl_output(&value),
+            Some("{\n  \"items\": [\n    1,\n    {\n      \"ok\": true\n    }\n  ]\n}".into())
+        );
     }
 }
