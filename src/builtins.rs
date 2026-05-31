@@ -62,13 +62,8 @@ pub fn install(environment: &Environment) {
     );
 
     let open = Value::native(sqlite_open);
-    let query = Value::native(sqlite_query);
-    let execute = Value::native(sqlite_execute);
     let mut sqlite = Module::new();
-    sqlite
-        .set("open", open)
-        .set("query", query)
-        .set("execute", execute);
+    sqlite.set("open", open);
     environment.set("sqlite", sqlite.into());
 }
 
@@ -746,7 +741,24 @@ fn sqlite_open(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
             .max_connections(1)
             .connect_with(options),
     )?;
-    Ok(Value::Database(pool))
+    Ok(Value::Object(ValueMap::from([
+        (
+            "execute".into(),
+            sqlite_database_method(&pool, sqlite_execute),
+        ),
+        ("query".into(), sqlite_database_method(&pool, sqlite_query)),
+    ])))
+}
+
+fn sqlite_database_method(
+    pool: &sqlx::SqlitePool,
+    function: fn(Vec<Value>, NamedArguments) -> Result<Value>,
+) -> Value {
+    let pool = pool.clone();
+    Value::native(move |mut positional, named| {
+        positional.insert(0, Value::Database(pool.clone()));
+        function(positional, named)
+    })
 }
 
 fn sqlite_query(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {

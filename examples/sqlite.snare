@@ -1,4 +1,4 @@
 let db = sqlite.open(":memory:");
-sqlite.execute(db, "create table notes (id integer, body text)");
-sqlite.execute(db, "insert into notes values (?, ?)", [1, "hello"]);
-sqlite.query(db, "select * from notes");
+db.execute("create table notes (id integer, body text)");
+db.execute("insert into notes values (?, ?)", [1, "hello"]);
+db.query("select * from notes");

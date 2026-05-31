@@ -90,14 +90,14 @@ fn sqlite_can_be_explored_from_the_language() {
     let mut engine = Engine::new();
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     engine
-        .eval(r#"sqlite.execute(db, "create table notes (id integer, body text)");"#)
+        .eval(r#"db.execute("create table notes (id integer, body text)");"#)
         .unwrap();
     engine
-        .eval(r#"sqlite.execute(db, "insert into notes values (?, ?)", [1, "hello"]);"#)
+        .eval(r#"db.execute("insert into notes values (?, ?)", [1, "hello"]);"#)
         .unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite.query(db, "select * from notes")"#)
+            .eval(r#"db.query("select * from notes")"#)
             .unwrap()
             .to_string(),
         r#"[{"body":"hello","id":1}]"#
@@ -110,20 +110,20 @@ fn sqlite_supports_runtime_types_and_json_byte_arrays() {
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite.query(db, "select ? as value", ["hello"])"#)
+            .eval(r#"db.query("select ? as value", ["hello"])"#)
             .unwrap()
             .to_string(),
         r#"[{"value":"hello"}]"#
     );
     engine
-        .eval(r#"sqlite.execute(db, "create table files (payload blob)");"#)
+        .eval(r#"db.execute("create table files (payload blob)");"#)
         .unwrap();
     engine
-        .eval(r#"sqlite.execute(db, "insert into files values (?)", [[0, 127, 255]]);"#)
+        .eval(r#"db.execute("insert into files values (?)", [[0, 127, 255]]);"#)
         .unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite.query(db, "select payload from files")"#)
+            .eval(r#"db.query("select payload from files")"#)
             .unwrap()
             .to_string(),
         r#"[{"payload":[0,127,255]}]"#
@@ -192,7 +192,7 @@ fn sqlite_is_available_as_a_module() {
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     assert_eq!(
         engine
-            .eval(r#"sqlite.query(db, "select 42 as answer")"#)
+            .eval(r#"db.query("select 42 as answer")"#)
             .unwrap()
             .to_string(),
         r#"[{"answer":42}]"#
@@ -272,7 +272,11 @@ fn values_have_json_native_type_names() {
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     assert_eq!(
         engine.eval("type_of(db)").unwrap().to_string(),
-        r#""sqlite_database""#
+        r#""object""#
+    );
+    assert_eq!(
+        engine.eval("keys(db)").unwrap().to_string(),
+        r#"["execute","query"]"#
     );
 }
 
@@ -344,7 +348,7 @@ fn globals_exposes_the_live_root_namespace() {
             .eval(r#"keys(globals().sqlite)"#)
             .unwrap()
             .to_string(),
-        r#"["execute","open","query"]"#
+        r#"["open"]"#
     );
     assert_eq!(
         engine
@@ -369,9 +373,7 @@ fn collection_helpers_make_sqlite_rows_easy_to_explore() {
     engine.eval(r#"let db = sqlite.open(":memory:");"#).unwrap();
     assert_eq!(
         engine
-            .eval(
-                r#"map(sqlite.query(db, "select 1 as id union all select 2 as id"), fn(row) => row.id)"#
-            )
+            .eval(r#"map(db.query("select 1 as id union all select 2 as id"), fn(row) => row.id)"#)
             .unwrap()
             .to_string(),
         "[1,2]"

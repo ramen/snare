@@ -95,16 +95,16 @@ The global namespace is inspectable from the REPL:
 
 ```snare
 keys(globals())
-keys(globals().sqlite)                         // ["execute", "open", "query"]
+keys(globals().sqlite)                         // ["open"]
 ```
 
 SQLite is intentionally present in the first milestone:
 
 ```snare
 let db = sqlite.open("notes.db");
-sqlite.execute(db, "create table if not exists notes (body text)");
-sqlite.execute(db, "insert into notes values (?)", ["hello"]);
-sqlite.query(db, "select rowid, body from notes");
+db.execute("create table if not exists notes (body text)");
+db.execute("insert into notes values (?)", ["hello"]);
+db.query("select rowid, body from notes");
 ```
 
 SQLite `NULL`, integer, real, text, and BLOB values map to JSON-shaped Snare
@@ -112,8 +112,8 @@ values. BLOBs use byte arrays, so they can be inspected and passed back to
 SQLite without adding a non-JSON literal type:
 
 ```snare
-sqlite.execute(db, "insert into files values (?)", [[0, 127, 255]]);
-sqlite.query(db, "select payload from files");
+db.execute("insert into files values (?)", [[0, 127, 255]]);
+db.query("select payload from files");
 // [{"payload": [0, 127, 255]}]
 ```
 
