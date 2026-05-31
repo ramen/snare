@@ -23,12 +23,23 @@ pub fn parse(source: &str) -> Result<Vec<Statement>> {
 }
 
 pub fn is_incomplete(source: &str) -> bool {
+    if parse(&with_trailing_semicolon(source)).is_ok() {
+        return false;
+    }
     SnareParser::parse(Rule::program, source)
         .err()
         .is_some_and(|error| match error.location {
             InputLocation::Pos(position) => position == source.len(),
             InputLocation::Span((_, end)) => end == source.len(),
         })
+}
+
+fn with_trailing_semicolon(source: &str) -> String {
+    if source.trim_end().ends_with(';') {
+        source.to_owned()
+    } else {
+        format!("{source};")
+    }
 }
 
 fn parse_statement(pair: Pair<Rule>) -> Result<Statement> {

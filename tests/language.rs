@@ -53,6 +53,7 @@ fn incomplete_input_can_be_continued_by_the_repl() {
     assert!(is_incomplete("let value = {"));
     assert!(is_incomplete("1 +"));
     assert!(!is_incomplete("1 + 2"));
+    assert!(!is_incomplete("let value = 1"));
     assert!(!is_incomplete("let = 1;"));
 }
 

@@ -148,6 +148,14 @@ fn push_colored(output: &mut String, color: &str, text: &str) {
     output.push_str(RESET);
 }
 
+fn with_trailing_semicolon(source: &str) -> String {
+    if source.trim_end().ends_with(';') {
+        source.to_owned()
+    } else {
+        format!("{source};")
+    }
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
@@ -204,7 +212,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let _ = editor.add_history_entry(&source);
-                match engine.eval(&source) {
+                match engine.eval(&with_trailing_semicolon(&source)) {
                     Ok(value) => println!("{value}"),
                     Err(error) => eprintln!("{error}"),
                 }
