@@ -9,7 +9,7 @@ use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Editor, Helper};
-use snare::{Engine, is_incomplete};
+use snare::{Engine, Value, is_incomplete};
 
 const RESET: &str = "\x1b[0m";
 const PROMPT: &str = "\x1b[1;32m";
@@ -156,6 +156,13 @@ fn with_trailing_semicolon(source: &str) -> String {
     }
 }
 
+fn repl_output(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        value => Some(value.to_string()),
+    }
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
@@ -213,7 +220,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let _ = editor.add_history_entry(&source);
                 match engine.eval(&with_trailing_semicolon(&source)) {
-                    Ok(value) => println!("{value}"),
+                    Ok(value) => {
+                        if let Some(output) = repl_output(&value) {
+                            println!("{output}");
+                        }
+                    }
                     Err(error) => eprintln!("{error}"),
                 }
             }
@@ -227,7 +238,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{COMMENT, KEYWORD, LITERAL, NUMBER, RESET, STRING, highlight};
+    use snare::Value;
+
+    use super::{COMMENT, KEYWORD, LITERAL, NUMBER, RESET, STRING, highlight, repl_output};
 
     #[test]
     fn highlights_repl_tokens() {
@@ -245,5 +258,11 @@ mod tests {
             highlight(r#""cafe \u2615" + -1.5e+2"#),
             format!("{STRING}\"cafe \\u2615\"{RESET} + {NUMBER}-1.5e+2{RESET}")
         );
+    }
+
+    #[test]
+    fn repl_does_not_print_null_values() {
+        assert_eq!(repl_output(&Value::Null), None);
+        assert_eq!(repl_output(&Value::Number(42.into())), Some("42".into()));
     }
 }
