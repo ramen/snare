@@ -62,7 +62,11 @@ fn highlight(line: &str) -> String {
         }
         let byte = line.as_bytes()[index];
         if byte == b'"' {
-            let end = string_end(line, index);
+            let end = if rest.starts_with(r#"""""#) {
+                multiline_string_end(line, index)
+            } else {
+                string_end(line, index)
+            };
             push_colored(&mut highlighted, STRING, &line[index..end]);
             index = end;
         } else if byte.is_ascii_digit()
@@ -93,6 +97,12 @@ fn highlight(line: &str) -> String {
         }
     }
     highlighted
+}
+
+fn multiline_string_end(line: &str, start: usize) -> usize {
+    line[start + 3..]
+        .find(r#"""""#)
+        .map_or(line.len(), |offset| start + 3 + offset + 3)
 }
 
 fn string_end(line: &str, start: usize) -> usize {
@@ -262,6 +272,14 @@ mod tests {
         assert_eq!(
             highlight(r#""cafe \u2615" + -1.5e+2"#),
             format!("{STRING}\"cafe \\u2615\"{RESET} + {NUMBER}-1.5e+2{RESET}")
+        );
+    }
+
+    #[test]
+    fn highlights_multiline_strings() {
+        assert_eq!(
+            highlight("\"\"\"first\nsecond\"\"\""),
+            format!("{STRING}\"\"\"first\nsecond\"\"\"{RESET}")
         );
     }
 

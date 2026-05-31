@@ -18,6 +18,15 @@ fn json_is_the_literal_core() {
 }
 
 #[test]
+fn multiline_strings_preserve_their_contents() {
+    assert_eq!(
+        eval("\"\"\"select \"body\"\nfrom notes\nwhere id = ?\"\"\""),
+        r#""select \"body\"\nfrom notes\nwhere id = ?""#
+    );
+    assert_eq!(eval(r#""""backslash: \n""""#), r#""backslash: \\n""#);
+}
+
+#[test]
 fn operators_have_familiar_precedence() {
     assert_eq!(eval("1 + 2 * 3 == 7 && !false"), "true");
 }
@@ -83,6 +92,8 @@ fn incomplete_input_can_be_continued_by_the_repl() {
     assert!(!is_incomplete("1 + 2"));
     assert!(!is_incomplete("let value = 1"));
     assert!(!is_incomplete("let = 1;"));
+    assert!(is_incomplete("\"\"\"first line"));
+    assert!(!is_incomplete("\"\"\"first line\nsecond line\"\"\""));
 }
 
 #[test]

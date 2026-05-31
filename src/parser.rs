@@ -23,6 +23,9 @@ pub fn parse(source: &str) -> Result<Vec<Statement>> {
 }
 
 pub fn is_incomplete(source: &str) -> bool {
+    if has_unclosed_multiline_string(source) {
+        return true;
+    }
     if parse(&with_trailing_semicolon(source)).is_ok() {
         return false;
     }
@@ -32,6 +35,40 @@ pub fn is_incomplete(source: &str) -> bool {
             InputLocation::Pos(position) => position == source.len(),
             InputLocation::Span((_, end)) => end == source.len(),
         })
+}
+
+fn has_unclosed_multiline_string(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut index = 0;
+    let mut multiline = false;
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"\"\"\"") {
+            multiline = !multiline;
+            index += 3;
+        } else if multiline {
+            index += 1;
+        } else if bytes[index..].starts_with(b"//") {
+            index += bytes[index..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .unwrap_or(bytes.len() - index);
+        } else if bytes[index] == b'"' {
+            index += 1;
+            while index < bytes.len() {
+                match bytes[index] {
+                    b'\\' => index += 2,
+                    b'"' => {
+                        index += 1;
+                        break;
+                    }
+                    _ => index += 1,
+                }
+            }
+        } else {
+            index += 1;
+        }
+    }
+    multiline
 }
 
 fn with_trailing_semicolon(source: &str) -> String {
@@ -151,6 +188,10 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
                 serde_json::from_str(pair.as_str())
                     .map_err(|error| Error::Parse(error.to_string()))?,
             ),
+            pair_span,
+        )),
+        Rule::multiline_string => Ok(expr(
+            ExprKind::String(pair.as_str()[3..pair.as_str().len() - 3].to_owned()),
             pair_span,
         )),
         Rule::array => pair

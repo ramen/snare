@@ -28,6 +28,8 @@ null
 true
 42
 "text"
+"""text that can
+span multiple lines"""
 [1, 2, 3]
 {"quoted": "keys only"}
 
@@ -44,6 +46,8 @@ values[1]                                     // 2
 if len([1, 2]) > 0 then "yes" else "no"
 do { let x = 2; x * 3 }
 ```
+
+Triple-quoted strings are raw: newlines and backslashes are preserved exactly.
 
 JSON-shaped values have a small collection toolkit:
 

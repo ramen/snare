@@ -23,7 +23,7 @@ named_argument = { identifier ~ "=" ~ expression }
 member = { "." ~ identifier }
 index = { "[" ~ expression ~ "]" }
 
-primary = _{ function | if_expression | do_expression | array | object | string | number | boolean | null | identifier | grouped }
+primary = _{ function | if_expression | do_expression | array | object | multiline_string | string | number | boolean | null | identifier | grouped }
 grouped = { "(" ~ expression ~ ")" }
 function = { "fn" ~ "(" ~ parameter_list? ~ ")" ~ "=>" ~ expression }
 parameter_list = { parameter ~ ("," ~ parameter)* ~ ","? }
@@ -34,6 +34,7 @@ do_expression = { "do" ~ "{" ~ (let_statement | assignment_statement)* ~ express
 array = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
 object = { "{" ~ (object_entry ~ ("," ~ object_entry)* ~ ","?)? ~ "}" }
 object_entry = { string ~ ":" ~ expression }
+multiline_string = @{ "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\"" }
 string = @{ "\"" ~ ("\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" | unicode_escape | !("\"" | "\\") ~ ANY)* ~ "\"" }
 unicode_escape = { "\\u" ~ ASCII_HEX_DIGIT{4} }
 number = @{ "-"? ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) ~ ("." ~ ASCII_DIGIT+)? ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
