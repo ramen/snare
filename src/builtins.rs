@@ -34,6 +34,7 @@ pub fn install(environment: &Environment) {
     environment.set("merge", Value::native(merge));
     environment.set("contains", Value::native(contains));
     environment.set("push", Value::native(push));
+    environment.set("append", Value::native(append));
     environment.set("first", Value::native(first));
     environment.set("rest", Value::native(rest));
     environment.set("slice", Value::native(slice));
@@ -324,6 +325,22 @@ fn push(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     };
     let mut result = values.clone();
     result.push(positional[1].clone());
+    Ok(Value::Array(result))
+}
+
+fn append(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Array(arrays) = &positional[0] else {
+        return Err(Error::Type("append expects an array of arrays".into()));
+    };
+    let mut result = vec![];
+    for array in arrays {
+        let Value::Array(values) = array else {
+            return Err(Error::Type("append expects an array of arrays".into()));
+        };
+        result.extend(values.clone());
+    }
     Ok(Value::Array(result))
 }
 
