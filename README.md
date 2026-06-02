@@ -45,9 +45,15 @@ values[1]                                     // 2
 
 if len([1, 2]) > 0 then "yes" else "no"
 do { let x = 2; x * 3 }
+let main = fn() => {
+  print("Hello");
+  print("world");
+};
 ```
 
 Triple-quoted strings are raw: newlines and backslashes are preserved exactly.
+Blocks can contain any mix of bindings, assignments, and expressions. The
+`do` keyword is optional when a block is used as an expression.
 
 JSON-shaped values have a small collection toolkit:
 

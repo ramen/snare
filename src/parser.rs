@@ -233,17 +233,19 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
                 pair_span,
             ))
         }
-        Rule::do_expression => {
-            let mut inner: Vec<_> = pair.into_inner().collect();
-            let result = parse_expr(inner.pop().expect("do result"))?;
-            let statements = inner
-                .into_iter()
-                .map(parse_statement)
-                .collect::<Result<_>>()?;
-            Ok(expr(ExprKind::Do(statements, Box::new(result)), pair_span))
+        Rule::do_expression | Rule::block_expression => {
+            parse_block(pair.into_inner().next().expect("block"), pair_span)
         }
         _ => unreachable!("unexpected expression: {:?}", pair.as_rule()),
     }
+}
+
+fn parse_block(pair: Pair<Rule>, span: Span) -> Result<Expr> {
+    let statements = pair
+        .into_inner()
+        .map(parse_statement)
+        .collect::<Result<_>>()?;
+    Ok(expr(ExprKind::Do(statements), span))
 }
 
 fn parse_call(pair: Pair<Rule>) -> Result<Vec<Argument>> {

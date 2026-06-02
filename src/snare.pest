@@ -23,13 +23,15 @@ named_argument = { identifier ~ "=" ~ expression }
 member = { "." ~ identifier }
 index = { "[" ~ expression ~ "]" }
 
-primary = _{ function | if_expression | do_expression | array | object | multiline_string | string | number | boolean | null | identifier | grouped }
+primary = _{ function | if_expression | do_expression | array | object | block_expression | multiline_string | string | number | boolean | null | identifier | grouped }
 grouped = { "(" ~ expression ~ ")" }
 function = { "fn" ~ "(" ~ parameter_list? ~ ")" ~ "=>" ~ expression }
 parameter_list = { parameter ~ ("," ~ parameter)* ~ ","? }
 parameter = { identifier ~ ("=" ~ expression)? }
 if_expression = { "if" ~ expression ~ "then" ~ expression ~ "else" ~ expression }
-do_expression = { "do" ~ "{" ~ (let_statement | assignment_statement)* ~ expression ~ "}" }
+do_expression = { "do" ~ block }
+block_expression = { block }
+block = { "{" ~ statement* ~ "}" }
 
 array = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
 object = { "{" ~ (object_entry ~ ("," ~ object_entry)* ~ ","?)? ~ "}" }

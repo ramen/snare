@@ -47,6 +47,18 @@ fn do_expressions_introduce_a_local_scope() {
 }
 
 #[test]
+fn blocks_do_not_require_the_do_keyword() {
+    assert_eq!(eval("let add = fn() => { let x = 2; x + 3 }; add()"), "5");
+    assert_eq!(eval("if true then { 1; 2 } else { 3; 4 }"), "2");
+}
+
+#[test]
+fn blocks_accept_mixed_statements() {
+    assert_eq!(eval("let x = 1; do { x; let y = 2; x = x + y; x; }"), "3");
+    assert_eq!(eval("do {}"), "null");
+}
+
+#[test]
 fn assignment_updates_an_existing_binding() {
     assert_eq!(eval("let x = 1; x = x + 2; x"), "3");
     assert_eq!(eval("let x = 1; do { x = 4; null }; x"), "4");

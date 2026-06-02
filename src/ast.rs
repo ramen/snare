@@ -45,7 +45,7 @@ pub enum ExprKind {
     Index(Box<Expr>, Box<Expr>),
     Function(Vec<Parameter>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
-    Do(Vec<Statement>, Box<Expr>),
+    Do(Vec<Statement>),
 }
 
 #[derive(Clone, Debug)]

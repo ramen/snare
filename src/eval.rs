@@ -163,10 +163,9 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
                 eval(else_expr, environment)
             }
         }
-        ExprKind::Do(statements, result) => {
+        ExprKind::Do(statements) => {
             let environment = environment.child();
-            eval_statements(statements, &environment)?;
-            eval(result, &environment)
+            eval_statements(statements, &environment)
         }
     }
 }
