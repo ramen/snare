@@ -1,9 +1,25 @@
+// Pest grammar quick reference:
+//   ~       sequence: match the rule on the left, then the rule on the right
+//   |       ordered choice: try alternatives from left to right
+//   * / +   repeat zero-or-more / one-or-more times
+//   ?       make the preceding item optional
+//   !rule   negative lookahead: continue only if rule does not match here
+//   _{...}  silent rule: use it for grouping, but omit it from the parse tree
+//   @{...}  atomic rule: match it as one token without implicit whitespace
+//
+// WHITESPACE and COMMENT are special Pest rules. Between the pieces joined by
+// `~`, Pest skips them automatically unless the surrounding rule is atomic.
+
+// A source file is a list of statements. SOI and EOI anchor the match to the
+// start and end of the input so a valid prefix cannot hide trailing junk.
 program = { SOI ~ statement* ~ EOI }
 statement = _{ let_statement | assignment_statement | expression_statement }
 let_statement = { "let" ~ identifier ~ "=" ~ expression ~ ";" }
 assignment_statement = { identifier ~ "=" ~ expression ~ ";" }
 expression_statement = { expression ~ ";"? }
 
+// Binary operators are parsed as a flat sequence here. parser.rs applies the
+// usual precedence levels after Pest has produced the parse tree.
 expression = { prefix ~ (infix ~ prefix)* }
 prefix = { unary* ~ postfix }
 unary = { "-" | "!" }
@@ -15,6 +31,7 @@ comparison = { "<=" | ">=" | "<" | ">" }
 addition = { "+" | "-" }
 multiplication = { "*" | "/" | "%" }
 
+// Postfix operations may be chained: value.method()[index].
 postfix = { primary ~ (call | member | index)* }
 call = { "(" ~ argument_list? ~ ")" }
 argument_list = { argument ~ ("," ~ argument)* ~ ","? }
@@ -23,6 +40,9 @@ named_argument = { identifier ~ "=" ~ expression }
 member = { "." ~ identifier }
 index = { "[" ~ expression ~ "]" }
 
+// PEG choices are ordered. Keep object before block_expression: both begin
+// with `{`, and a quoted-key JSON object should be recognized as an object
+// before Pest considers interpreting the braces as a statement block.
 primary = _{ function | if_expression | do_expression | array | object | block_expression | multiline_string | string | number | boolean | null | identifier | grouped }
 grouped = { "(" ~ expression ~ ")" }
 function = { "fn" ~ "(" ~ parameter_list? ~ ")" ~ "=>" ~ expression }
@@ -33,9 +53,14 @@ do_expression = { "do" ~ block }
 block_expression = { block }
 block = { "{" ~ statement* ~ "}" }
 
+// Collection literals follow JSON syntax. The inner group is optional so
+// empty arrays and objects are accepted; the final comma is optional too.
 array = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
 object = { "{" ~ (object_entry ~ ("," ~ object_entry)* ~ ","?)? ~ "}" }
 object_entry = { string ~ ":" ~ expression }
+
+// Strings and numbers are atomic tokens. Inside strings, negative lookahead
+// consumes ordinary characters only when they are not a quote or backslash.
 multiline_string = @{ "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\"" }
 string = @{ "\"" ~ ("\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" | unicode_escape | !("\"" | "\\") ~ ANY)* ~ "\"" }
 unicode_escape = { "\\u" ~ ASCII_HEX_DIGIT{4} }
@@ -43,6 +68,8 @@ number = @{ "-"? ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) ~ ("." ~ ASCII_DIG
 boolean = { "true" | "false" }
 null = { "null" }
 
+// The keyword lookahead prevents reserved words from being identifiers while
+// still allowing names such as `letter` and `null_value`.
 identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 keyword = { ("let" | "fn" | "if" | "then" | "else" | "do" | "true" | "false" | "null") ~ !(ASCII_ALPHANUMERIC | "_") }
 
