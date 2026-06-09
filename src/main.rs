@@ -169,7 +169,9 @@ fn with_trailing_semicolon(source: &str) -> String {
 fn repl_output(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
-        Value::Array(_) | Value::Object(_, _) => Some(value.to_pretty_string()),
+        Value::Array(_) => Some(value.to_pretty_string()),
+        Value::Object(_, Some(tag)) => Some(value.to_pretty_string() + " #" + tag),
+        Value::Object(_, _) => Some(value.to_pretty_string()),
         value => Some(value.to_string()),
     }
 }
