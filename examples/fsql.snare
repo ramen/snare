@@ -11,12 +11,7 @@
 // used with any database API as long as the database supports SQL syntax.
 // These functions should all produce standard SQL.
 
-// TODO: Bake these into the language and make __tag private
-let get_tag = fn(value) =>
-  if type_of(value) == "object" then get(value, "__tag") else null;
-let set_tag = fn(tag, value) => set(value, "__tag", tag);
-
-let Fsql = {
+let fsql = {
 
   // --- Types ---
 
@@ -41,37 +36,37 @@ let Fsql = {
 
   // Returns a list of comma-separated, SQL-quoted values.
   "join_quoted": fn(items) =>
-    join(", ", map(items, fn(item) => Fsql.quote(item))),
+    join(", ", map(items, fn(item) => fsql.quote(item))),
 
   // --- Field clauses ---
 
   // Returns a where clause of the form "key = 'val'".
   "field_value": fn(key, val) =>
-    join("", [key, " = ", Fsql.quote(val)]),
+    join("", [key, " = ", fsql.quote(val)]),
 
   // Returns a where clause of the form "key IS val".
   "field_ident": fn(key, val) =>
-    join("", [key, " IS ", Fsql.quote(val)]),
+    join("", [key, " IS ", fsql.quote(val)]),
 
   // Returns a where clause of the form "key IN (y0, y1, ...)".
   "field_list": fn(key, val) =>
-    if val then join("", [key, " IN (", Fsql.join_quoted(val), ")"]) else "1 = 0",
+    if val then join("", [key, " IN (", fsql.join_quoted(val), ")"]) else "1 = 0",
 
   // Returns a where clause of the form "key BETWEEN start AND finish".
   "field_range": fn(key, val) =>
-    join("", [key, " BETWEEN ", Fsql.quote(val.start), " AND ", Fsql.quote(val.finish)]),
+    join("", [key, " BETWEEN ", fsql.quote(val.start), " AND ", fsql.quote(val.finish)]),
 
   // Returns a where clause of the form "key LIKE '[%]val[%]'".
   // Mode should be one of: "start", "end", "both", "none".
   // If mode is "none", returns the result of field_value instead.
   "field_like": fn(key, val, mode="none") =>
     if mode == "none"
-    then Fsql.field_value(key, val)
+    then fsql.field_value(key, val)
     else {
       let v = string(val);
       v = if mode == "start" || mode == "both" then join("", [v, "%"]) else v;
       v = if mode == "end" || mode == "both" then join("", ["%", v]) else v;
-      join("", [key, " LIKE ", Fsql.quote(v)])
+      join("", [key, " LIKE ", fsql.quote(v)])
     },
 
   // Returns a where clause from an object.
@@ -79,7 +74,7 @@ let Fsql = {
   // The following mappings occur for object values:
   //  - null:            key IS NULL
   //  - array:           key IN (v1, v2, ...)
-  //  - Fsql.range:      key BETWEEN start AND finish
+  //  - fsql.range:      key BETWEEN start AND finish
   //  - string:          key = 'val' (or key LIKE 'val%', etc. depending on mode)
   //  - other:           key = val
   //
@@ -93,11 +88,11 @@ let Fsql = {
       let key = pair[0];
       let val = pair[1];
       let type = type_of(val);
-      if type == "null" then Fsql.field_ident(key, val)
-      else if type == "array" then Fsql.field_list(key, val)
-      else if get_tag(val) == "fsql_range" then Fsql.field_range(key, val)
-      else if type == "string" then Fsql.field_like(key, val, mode=mode)
-      else Fsql.field_value(key, val)
+      if type == "null" then fsql.field_ident(key, val)
+      else if type == "array" then fsql.field_list(key, val)
+      else if get_tag(val) == "fsql_range" then fsql.field_range(key, val)
+      else if type == "string" then fsql.field_like(key, val, mode=mode)
+      else fsql.field_value(key, val)
     }))
   },
 
@@ -112,7 +107,7 @@ let Fsql = {
   "select": fn(table=null, where=null, fields="*",
                groupBy=null, having=null, orderBy=null,
                limit=null, distinct=null) => {
-    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
+    where = if type_of(where) == "object" then fsql.lookup(where) else where;
     fields = if type_of(fields) == "string" then [fields] else fields;
     join("", [
       "SELECT ",
@@ -136,7 +131,7 @@ let Fsql = {
     join("", [
       "INSERT INTO ", table,
       " (", join(", ", keys(row)), ")",
-      " VALUES (", Fsql.join_quoted(values(row)), ")"
+      " VALUES (", fsql.join_quoted(values(row)), ")"
     ])
   },
 
@@ -146,8 +141,8 @@ let Fsql = {
   // "row" is an object of field/value pairs to set.
   // "where" can be a string or an object (parsed with lookup).
   "update": fn(table, row, where) => {
-    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
-    let sets = map(pairs(row), fn(pair) => Fsql.field_value(pair[0], pair[1]));
+    where = if type_of(where) == "object" then fsql.lookup(where) else where;
+    let sets = map(pairs(row), fn(pair) => fsql.field_value(pair[0], pair[1]));
     join("", [
       "UPDATE ", table,
       " SET ", join(", ", sets),
@@ -160,10 +155,10 @@ let Fsql = {
   // "table" is the table name.
   // "where" can be a string or an object (parsed with lookup).
   "delete": fn(table, where) => {
-    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
+    where = if type_of(where) == "object" then fsql.lookup(where) else where;
     join("", ["DELETE FROM ", table, " WHERE ", where])
   },
 
 };
 
-Fsql
+module(fsql)
