@@ -649,7 +649,7 @@ fn globals(
 ) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 0)?;
-    Ok(Value::Object(environment.globals(), None))
+    Ok(Value::Object(environment.globals(), Some("module".to_string())))
 }
 
 fn string_transform(
