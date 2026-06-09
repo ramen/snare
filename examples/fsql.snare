@@ -1,0 +1,169 @@
+// fsql.snare - Functional SQL query string creation tools
+// Author:   Dave Benjamin <dave@ramenlabs.com>
+// Original: 03/25/2005 (Python)
+// Ported:   01/09/2006 (PHP)
+// Ported:   03/02/2026 (Square)
+// Ported:   06/09/2026 (Snare)
+//
+// This module provides functional tools for creating SQL query strings.
+//
+// Because they do not do any database communication, these functions can be
+// used with any database API as long as the database supports SQL syntax.
+// These functions should all produce standard SQL.
+
+// TODO: Bake these into the language and make __tag private
+let get_tag = fn(value) =>
+  if type_of(value) == "object" then get(value, "__tag") else null;
+let set_tag = fn(tag, value) => set(value, "__tag", tag);
+
+let Fsql = {
+
+  // --- Types ---
+
+  // A literal value that will not be SQL-quoted.
+  "literal": fn(value) => set_tag("fsql_literal", {"value": value}),
+
+  // A range pair for use in BETWEEN queries.
+  "range": fn(start=null, finish=null) =>
+    set_tag("fsql_range", {"start": start, "finish": finish}),
+
+  // --- Quoting ---
+
+  // Returns the SQL-quoted string representation of its input.
+  "quote": fn(value) => {
+    let type = type_of(value);
+    if type == "null" then "NULL"
+    else if type == "bool" then (if value then "TRUE" else "FALSE")
+    else if type == "number" then string(value)
+    else if get_tag(value) == "fsql_literal" then string(value.value)
+    else join("", ["'", replace("'", "''", string(value)), "'"])
+  },
+
+  // Returns a list of comma-separated, SQL-quoted values.
+  "join_quoted": fn(items) =>
+    join(", ", map(items, fn(item) => Fsql.quote(item))),
+
+  // --- Field clauses ---
+
+  // Returns a where clause of the form "key = 'val'".
+  "field_value": fn(key, val) =>
+    join("", [key, " = ", Fsql.quote(val)]),
+
+  // Returns a where clause of the form "key IS val".
+  "field_ident": fn(key, val) =>
+    join("", [key, " IS ", Fsql.quote(val)]),
+
+  // Returns a where clause of the form "key IN (y0, y1, ...)".
+  "field_list": fn(key, val) =>
+    if val then join("", [key, " IN (", Fsql.join_quoted(val), ")"]) else "1 = 0",
+
+  // Returns a where clause of the form "key BETWEEN start AND finish".
+  "field_range": fn(key, val) =>
+    join("", [key, " BETWEEN ", Fsql.quote(val.start), " AND ", Fsql.quote(val.finish)]),
+
+  // Returns a where clause of the form "key LIKE '[%]val[%]'".
+  // Mode should be one of: "start", "end", "both", "none".
+  // If mode is "none", returns the result of field_value instead.
+  "field_like": fn(key, val, mode="none") =>
+    if mode == "none"
+    then Fsql.field_value(key, val)
+    else {
+      let v = string(val);
+      v = if mode == "start" || mode == "both" then join("", [v, "%"]) else v;
+      v = if mode == "end" || mode == "both" then join("", ["%", v]) else v;
+      join("", [key, " LIKE ", Fsql.quote(v)])
+    },
+
+  // Returns a where clause from an object.
+  //
+  // The following mappings occur for object values:
+  //  - null:            key IS NULL
+  //  - array:           key IN (v1, v2, ...)
+  //  - Fsql.range:      key BETWEEN start AND finish
+  //  - string:          key = 'val' (or key LIKE 'val%', etc. depending on mode)
+  //  - other:           key = val
+  //
+  // "match" should be either .any or .all, specifying what type of
+  // match to perform (any of the values vs. all of the values).
+  //
+  // "mode" should be the desired string-matching mode (see field_like).
+  "lookup": fn(where, match="all", mode="none") => {
+    let sep = if match == "all" then " AND " else " OR ";
+    join(sep, map(pairs(where), fn(pair) => {
+      let key = pair[0];
+      let val = pair[1];
+      let type = type_of(val);
+      if type == "null" then Fsql.field_ident(key, val)
+      else if type == "array" then Fsql.field_list(key, val)
+      else if get_tag(val) == "fsql_range" then Fsql.field_range(key, val)
+      else if type == "string" then Fsql.field_like(key, val, mode=mode)
+      else Fsql.field_value(key, val)
+    }))
+  },
+
+  // --- Query functions ---
+
+  // Returns an SQL SELECT query.
+  //
+  // "table" is the table name (string or null).
+  // "where" can be a string or an object (parsed with lookup).
+  // "fields" is a list of field names, or the string "*".
+  // additional options: "groupBy", "having", "orderBy", "limit", "distinct"
+  "select": fn(table=null, where=null, fields="*",
+               groupBy=null, having=null, orderBy=null,
+               limit=null, distinct=null) => {
+    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
+    fields = if type_of(fields) == "string" then [fields] else fields;
+    join("", [
+      "SELECT ",
+      if distinct then "DISTINCT " else "",
+      join(", ", fields),
+      if table then join("", [" FROM ", table]) else "",
+      if where then join("", [" WHERE ", where]) else "",
+      if groupBy then join("", [" GROUP BY ", groupBy]) else "",
+      if having then join("", [" HAVING ", having]) else "",
+      if orderBy then join("", [" ORDER BY ", orderBy]) else "",
+      if limit then join("", [" LIMIT ", string(limit)]) else "",
+    ])
+  },
+
+  // Returns an SQL INSERT query.
+  //
+  // "table" is the table name.
+  // "row" is an object representing the row to insert.
+  // Keys will be used as field names in the query.
+  "insert": fn(table, row) => {
+    join("", [
+      "INSERT INTO ", table,
+      " (", join(", ", keys(row)), ")",
+      " VALUES (", Fsql.join_quoted(values(row)), ")"
+    ])
+  },
+
+  // Returns an SQL UPDATE query.
+  //
+  // "table" is the table name.
+  // "row" is an object of field/value pairs to set.
+  // "where" can be a string or an object (parsed with lookup).
+  "update": fn(table, row, where) => {
+    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
+    let sets = map(pairs(row), fn(pair) => Fsql.field_value(pair[0], pair[1]));
+    join("", [
+      "UPDATE ", table,
+      " SET ", join(", ", sets),
+      " WHERE ", where
+    ])
+  },
+
+  // Returns an SQL DELETE query.
+  //
+  // "table" is the table name.
+  // "where" can be a string or an object (parsed with lookup).
+  "delete": fn(table, where) => {
+    where = if type_of(where) == "object" then Fsql.lookup(where) else where;
+    join("", ["DELETE FROM ", table, " WHERE ", where])
+  },
+
+};
+
+Fsql
