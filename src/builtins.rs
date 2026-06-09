@@ -14,6 +14,7 @@ pub fn install(environment: &Environment) {
     environment.set("is_type", Value::native(is_type));
     environment.set("get_tag", Value::native(get_tag));
     environment.set("set_tag", Value::native(set_tag));
+    environment.set("module", Value::native(module));
     environment.set("string", Value::native(string));
     environment.set("number", Value::native(to_number));
     environment.set("bool", Value::native(bool));
@@ -121,6 +122,15 @@ fn set_tag(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
         return Err(Error::Type("set_tag expects a string".into()))
     };
     Ok(Value::Object(map.clone(), Some(tag.clone())))
+}
+
+fn module(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    let Value::Object(map, _) = &positional[0] else {
+        return Err(Error::Type("module expects an object".into()))
+    };
+    Ok(Value::Object(map.clone(), Some("module".to_string())))
 }
 
 fn string(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
