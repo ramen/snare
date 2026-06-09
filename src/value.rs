@@ -20,7 +20,7 @@ pub enum Value {
     Number(serde_json::Number),
     String(String),
     Array(Vec<Value>),
-    Object(ValueMap),
+    Object(ValueMap, Option<String>),
     Function(Rc<Function>),
     Native(NativeFunction),
     Database(SqlitePool),
@@ -54,6 +54,7 @@ impl Value {
                     .into_iter()
                     .map(|(key, value)| (key, Self::from_json(value)))
                     .collect(),
+                None
             ),
         }
     }
@@ -67,7 +68,7 @@ impl Value {
             Self::Array(values) => {
                 serde_json::Value::Array(values.iter().map(Self::to_json).collect::<Result<_>>()?)
             }
-            Self::Object(values) => serde_json::Value::Object(
+            Self::Object(values, _) => serde_json::Value::Object(
                 values
                     .iter()
                     .map(|(key, value)| Ok((key.clone(), value.to_json()?)))
@@ -87,7 +88,7 @@ impl Value {
             Self::Number(value) => value.as_f64() != Some(0.0),
             Self::String(value) => !value.is_empty(),
             Self::Array(value) => !value.is_empty(),
-            Self::Object(value) => !value.is_empty(),
+            Self::Object(value, _) => !value.is_empty(),
             Self::Function(_) | Self::Native(_) | Self::Database(_) => true,
         }
     }
@@ -99,7 +100,7 @@ impl Value {
             Self::Number(_) => "number",
             Self::String(_) => "string",
             Self::Array(_) => "array",
-            Self::Object(_) => "object",
+            Self::Object(_, _) => "object",
             Self::Function(_) | Self::Native(_) => "function",
             Self::Database(_) => "sqlite_database",
         }
@@ -134,8 +135,8 @@ impl Value {
                 }
                 write!(output, "{:width$}]", "", width = indent)
             }
-            Self::Object(values) if values.is_empty() => write!(output, "{{}}"),
-            Self::Object(values) => {
+            Self::Object(values, _) if values.is_empty() => write!(output, "{{}}"),
+            Self::Object(values, _) => {
                 writeln!(output, "{{")?;
                 for (index, (key, value)) in values.iter().enumerate() {
                     write!(
@@ -170,7 +171,7 @@ impl Value {
                         .zip(right)
                         .all(|(left, right)| left.equal(right))
             }
-            (Self::Object(left), Self::Object(right)) => {
+            (Self::Object(left, _), Self::Object(right, _)) => {
                 left.len() == right.len()
                     && left
                         .iter()
@@ -202,7 +203,7 @@ impl fmt::Display for Value {
                 }
                 write!(formatter, "]")
             }
-            Self::Object(values) => {
+            Self::Object(values, _) => {
                 write!(formatter, "{{")?;
                 for (index, (key, value)) in values.iter().enumerate() {
                     if index > 0 {

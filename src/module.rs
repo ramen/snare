@@ -26,6 +26,6 @@ impl Module {
 
 impl From<Module> for Value {
     fn from(module: Module) -> Self {
-        Self::Object(module.values)
+        Self::Object(module.values, Some("module".to_string()))
     }
 }

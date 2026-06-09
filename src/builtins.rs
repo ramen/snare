@@ -12,6 +12,8 @@ pub fn install(environment: &Environment) {
     environment.set("print", Value::native(print));
     environment.set("type_of", Value::native(type_of));
     environment.set("is_type", Value::native(is_type));
+    environment.set("get_tag", Value::native(get_tag));
+    environment.set("set_tag", Value::native(set_tag));
     environment.set("string", Value::native(string));
     environment.set("number", Value::native(to_number));
     environment.set("bool", Value::native(bool));
@@ -100,6 +102,27 @@ fn is_type(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     Ok(Value::Bool(positional[0].type_name() == expected))
 }
 
+fn get_tag(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 1)?;
+    match &positional[0] {
+        Value::Object(_, Some(tag)) => Ok(Value::String(tag.clone())),
+        _ => Ok(Value::Null)
+    }
+}
+
+fn set_tag(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
+    reject_named(&named)?;
+    expect_len(&positional, 2)?;
+    let Value::Object(map, _) = &positional[0] else {
+        return Err(Error::Type("set_tag expects an object".into()))
+    };
+    let Value::String(tag) = &positional[1] else {
+        return Err(Error::Type("set_tag expects a string".into()))
+    };
+    Ok(Value::Object(map.clone(), Some(tag.clone())))
+}
+
 fn string(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
@@ -185,7 +208,7 @@ fn len(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     let len = match &positional[0] {
         Value::String(value) => value.chars().count(),
         Value::Array(value) => value.len(),
-        Value::Object(value) => value.len(),
+        Value::Object(value, _) => value.len(),
         _ => return Err(Error::Type("len expects a string, array, or object".into())),
     };
     Ok(Value::Number(len.into()))
@@ -194,7 +217,7 @@ fn len(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
 fn keys(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
-    let Value::Object(values) = &positional[0] else {
+    let Value::Object(values, _) = &positional[0] else {
         return Err(Error::Type("keys expects an object".into()));
     };
     Ok(Value::Array(
@@ -205,7 +228,7 @@ fn keys(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
 fn values(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
-    let Value::Object(values) = &positional[0] else {
+    let Value::Object(values, _) = &positional[0] else {
         return Err(Error::Type("values expects an object".into()));
     };
     Ok(Value::Array(values.values().cloned().collect()))
@@ -214,7 +237,7 @@ fn values(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
 fn pairs(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 1)?;
-    let Value::Object(values) = &positional[0] else {
+    let Value::Object(values, _) = &positional[0] else {
         return Err(Error::Type("pairs expects an object".into()));
     };
     Ok(Value::Array(
@@ -234,7 +257,7 @@ fn get(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     }
     let default = positional.get(2).cloned().unwrap_or(Value::Null);
     match (&positional[0], &positional[1]) {
-        (Value::Object(values), Value::String(key)) => {
+        (Value::Object(values, _), Value::String(key)) => {
             Ok(values.get(key).cloned().unwrap_or(default))
         }
         (Value::Array(values), Value::Number(index)) => {
@@ -250,7 +273,7 @@ fn has(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
     match (&positional[0], &positional[1]) {
-        (Value::Object(values), Value::String(key)) => Ok(Value::Bool(values.contains_key(key))),
+        (Value::Object(values, _), Value::String(key)) => Ok(Value::Bool(values.contains_key(key))),
         (Value::Array(values), Value::Number(index)) => {
             Ok(Value::Bool(array_index(values, index).is_some()))
         }
@@ -263,38 +286,38 @@ fn has(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
 fn set(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 3)?;
-    let [Value::Object(values), Value::String(key), value] = positional.as_slice() else {
+    let [Value::Object(values, tag), Value::String(key), value] = positional.as_slice() else {
         return Err(Error::Type(
             "set expects an object, string key, and value".into(),
         ));
     };
     let mut result = values.clone();
     result.insert(key.clone(), value.clone());
-    Ok(Value::Object(result))
+    Ok(Value::Object(result, tag.clone()))
 }
 
 fn remove(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
-    let [Value::Object(values), Value::String(key)] = positional.as_slice() else {
+    let [Value::Object(values, tag), Value::String(key)] = positional.as_slice() else {
         return Err(Error::Type(
             "remove expects an object and string key".into(),
         ));
     };
     let mut result = values.clone();
     result.remove(key);
-    Ok(Value::Object(result))
+    Ok(Value::Object(result, tag.clone()))
 }
 
 fn merge(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
-    let [Value::Object(left), Value::Object(right)] = positional.as_slice() else {
+    let [Value::Object(left, left_tag), Value::Object(right, right_tag)] = positional.as_slice() else {
         return Err(Error::Type("merge expects two objects".into()));
     };
     let mut result = left.clone();
     result.extend(right.clone());
-    Ok(Value::Object(result))
+    Ok(Value::Object(result, left_tag.clone().or(right_tag.clone())))
 }
 
 fn contains(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
@@ -626,7 +649,7 @@ fn globals(
 ) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 0)?;
-    Ok(Value::Object(environment.globals()))
+    Ok(Value::Object(environment.globals(), None))
 }
 
 fn string_transform(
@@ -747,7 +770,7 @@ fn sqlite_open(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
             sqlite_database_method(&pool, sqlite_execute),
         ),
         ("query".into(), sqlite_database_method(&pool, sqlite_query)),
-    ])))
+    ]), Some("module".to_string())))
 }
 
 fn sqlite_database_method(
@@ -862,7 +885,7 @@ fn row_to_value(row: &sqlx::sqlite::SqliteRow) -> Result<Value> {
         };
         object.insert(column.name().to_owned(), value);
     }
-    Ok(Value::Object(object))
+    Ok(Value::Object(object, None))
 }
 
 fn byte_array(values: &[Value]) -> Result<Vec<u8>> {

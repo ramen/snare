@@ -123,7 +123,7 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
             .iter()
             .map(|(key, value)| Ok((key.clone(), eval(value, environment)?)))
             .collect::<Result<_>>()
-            .map(Value::Object),
+            .map(|m| Value::Object(m, None)),
         ExprKind::Identifier(name) => environment
             .get(name)
             .ok_or_else(|| Error::Name(format!("unknown name: {name}"))),
@@ -139,7 +139,7 @@ fn eval_inner(expr: &Expr, environment: &Environment) -> Result<Value> {
             eval_binary(left, operator, eval(right, environment)?)
         }
         ExprKind::Member(object, name) => match eval(object, environment)? {
-            Value::Object(mut values) => values
+            Value::Object(mut values, _) => values
                 .remove(name)
                 .ok_or_else(|| Error::Name(format!("object has no member: {name}"))),
             _ => Err(Error::Type("member access expects an object".into())),
@@ -176,11 +176,11 @@ fn lookup_index(collection: Value, index: Value) -> Result<Value> {
             .get(array_index(values.len(), &index)?)
             .cloned()
             .ok_or_else(|| Error::Name("array index out of bounds".into())),
-        (Value::Object(mut values), Value::String(key)) => values
+        (Value::Object(mut values, _), Value::String(key)) => values
             .remove(&key)
             .ok_or_else(|| Error::Name(format!("object has no member: {key}"))),
         (Value::Array(_), _) => Err(Error::Type("array index must be an integer".into())),
-        (Value::Object(_), _) => Err(Error::Type("object index must be a string".into())),
+        (Value::Object(_, _), _) => Err(Error::Type("object index must be a string".into())),
         _ => Err(Error::Type("indexing expects an array or object".into())),
     }
 }
