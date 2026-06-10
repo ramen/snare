@@ -327,7 +327,7 @@ fn merge(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     };
     let mut result = left.clone();
     result.extend(right.clone());
-    Ok(Value::Object(result, left_tag.clone().or(right_tag.clone())))
+    Ok(Value::Object(result, right_tag.clone().or(left_tag.clone())))
 }
 
 fn contains(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
