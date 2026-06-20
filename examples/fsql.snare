@@ -16,11 +16,12 @@ let fsql = {
   // --- Types ---
 
   // A literal value that will not be SQL-quoted.
-  "literal": fn(value) => set_tag("fsql_literal", {"value": value}),
+  "literal": fn(value) =>
+    set_tag({"value": value}, "fsql_literal"),
 
   // A range pair for use in BETWEEN queries.
   "range": fn(start=null, finish=null) =>
-    set_tag("fsql_range", {"start": start, "finish": finish}),
+    set_tag({"start": start, "finish": finish}, "fsql_range"),
 
   // --- Quoting ---
 

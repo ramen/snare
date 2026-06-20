@@ -115,11 +115,11 @@ fn get_tag(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
 fn set_tag(positional: Vec<Value>, named: NamedArguments) -> Result<Value> {
     reject_named(&named)?;
     expect_len(&positional, 2)?;
-    let Value::String(tag) = &positional[0] else {
-        return Err(Error::Type("set_tag expects a string".into()))
-    };
-    let Value::Object(map, _) = &positional[1] else {
+    let Value::Object(map, _) = &positional[0] else {
         return Err(Error::Type("set_tag expects an object".into()))
+    };
+    let Value::String(tag) = &positional[1] else {
+        return Err(Error::Type("set_tag expects a string".into()))
     };
     Ok(Value::Object(map.clone(), Some(tag.clone())))
 }
